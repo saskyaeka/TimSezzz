@@ -28,55 +28,54 @@ Paolotory Platform Rantai Pasok Mikro ERP dan Manajemen Titip-Jual (Konsinyasi) 
     • PIC / Operator Reseller Gerai Pengelola kafe, staf kantin, atau pemilik toko konsinyasi. Hak akses terisolasi khusus gerainya: mencatat penerimaan drop barang, melaporkan angka penjualan harian, dan mengunduh lembar tagihan bagi hasil (settlement).
 
 4.  Peta Arsitektur & Alur Fitur Aplikasi
-    Sistem BaoStation dibangun menggunakan arsitektur modular berlapis (multi-tier architecture) yang memisahkan antarmuka pengguna, logika bisnis, penyimpanan data terstruktur, dan berkas media cloud.
-
-    ┌────────────────────────────────────────────────────────────────────────────────────────┐
-    │ CLIENT TIER │
-    │ [Admin Web Panel] [Kitchen Dashboard] [Central POS Touch] [Partner Portal] │
-    └───────────────────────────────────────────┬────────────────────────────────────────────┘
-    │ HTTPS / REST API
-    ┌───────────────────────────────────────────▼────────────────────────────────────────────┐
-    │ APPLICATION & LOGIC TIER │
-    │ ┌─────────────────────────┐ ┌─────────────────────────┐ ┌────────────────────────┐ │
-    │ │ RBAC & Auth Guard │ │ Kitchen MRP Engine │ │ POS & Drawer Logic │ │
-    │ └─────────────────────────┘ └─────────────────────────┘ └────────────────────────┘ │
-    │ ┌─────────────────────────┐ ┌─────────────────────────┐ ┌────────────────────────┐ │
-    │ │ Logistics & e-POD State │ │ Auto-Settlement Billing │ │ Steamer Lifecycle (QR) │ │
-    │ └─────────────────────────┘ └─────────────────────────┘ └────────────────────────┘ │
-    └──────────────────────┬────────────────────────────────────────────┬────────────────────┘
-    │ │
-    ┌──────────────────────▼─────────────────┐ ┌─────────────────▼────────────────────┐
-    │ DATA PERSISTENCE TIER │ │ CLOUD STORAGE TIER │
-    │ Relational Database (RDBMS) │ │ Cloud Media (Bukti Retur, e-POD, │
-    │ (Users, Ledger, Assets, Orders, BOM) │ │ Tanda Tangan Digital, QR Assets) │
-    └────────────────────────────────────────┘ └──────────────────────────────────────┘
-    Alur Kerja Operasional Utama
-    [1. PENGADAAN & PRODUKSI]
-    Penerimaan Bahan Baku ──> Update Stok Gudang ──> SPK Masak Dimulai (Potong Bahan via BOM)
-    │
-    ├──> Hasil Jadi: Batch Produk Frozen (Lot ID)
-    │
-    ┌─────────────────────────────────────────────┴──────────────────┐
-    ▼ ▼
-    [2. PENJUALAN RITEL PUSAT] [3. DISTRIBUSILOGISTIK]
-    Kasir POS Pusat Manifes Rute Pengantaran Kurir
-    ├── Jual Satuan Hangat (Steamer Pusat) ├── Muat Produk Frozen dari Cold Storage
-    └── Jual Pack Beku (Cold Storage Pusat) └── Drop-Off di Titik Mitra
-    │
-    ▼
-    [4. OPERASIONAL TITIK MITRA]
-    Portal Web Mitra (Tablet/HP)
-    ├── Konfirmasi Terima Pasokan (e-POD)
-    ├── Panaskan Bakpau di Smart Steamer
-    ├── Catat Penjualan Harian
-    └── Unggah Foto Klaim Retur Basi
-    │
-    ▼
-    [5. REKONSILIASI & SETTLEMENT]
-    Audit Sistem Otomatis
-    ├── Verifikasi Retur oleh Superadmin
-    ├── Kalkulasi Net Settlement Statement
-    └── Tagihan Terbit & Restok Terjadwal
+        •   Sistem BaoStation dibangun menggunakan arsitektur modular berlapis (multi-tier architecture) yang memisahkan antarmuka pengguna, logika bisnis, penyimpanan data terstruktur, dan berkas media cloud.
+        ┌────────────────────────────────────────────────────────────────────────────────────────┐
+        │                                          CLIENT TIER                                   │
+        │ [Admin Web Panel]     [Kitchen Dashboard]     [Central POS Touch]     [Partner Portal] │
+        └───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                                    │ HTTPS / REST API
+        ┌───────────────────────────────────────────▼────────────────────────────────────────────┐
+        │                                   APPLICATION & LOGIC TIER                             │
+        │ ┌─────────────────────────┐ ┌─────────────────────────┐ ┌────────────────────────┐     │
+        │ │ RBAC & Auth Guard       │ │ Kitchen MRP Engine      │ │ POS & Drawer Logic     │     │
+        │ └─────────────────────────┘ └─────────────────────────┘ └────────────────────────┘     │
+        │ ┌─────────────────────────┐ ┌─────────────────────────┐ ┌────────────────────────┐     │
+        │ │ Logistics & e-POD State │ │ Auto-Settlement Billing │ │ Steamer Lifecycle (QR) │     │
+        │ └─────────────────────────┘ └─────────────────────────┘ └────────────────────────┘     │
+        └──────────────────────┬────────────────────────────────────────────┬────────────────────┘
+                            │                                            │
+        ┌──────────────────────▼─────────────────┐        ┌─────────────────▼────────────────────┐
+        │ DATA PERSISTENCE TIER                  │        │ CLOUD STORAGE TIER                   │
+        │ Relational Database (RDBMS)            │        │ Cloud Media (Bukti Retur, e-POD,     │
+        │ (Users, Ledger, Assets, Orders, BOM)   │        │ Tanda Tangan Digital, QR Assets)     │
+        └────────────────────────────────────────┘        └──────────────────────────────────────┘
+        •   Alur Kerja Operasional Utama
+        [1. PENGADAAN & PRODUKSI]
+        Penerimaan Bahan Baku ──> Update Stok Gudang ──> SPK Masak Dimulai (Potong Bahan via BOM)
+        │
+        ├──> Hasil Jadi: Batch Produk Frozen (Lot ID)
+        │
+        ┌─────────────────────────────────────────────┴──────────────────┐
+        ▼                                                                ▼
+        [2. PENJUALAN RITEL PUSAT]                          [3. DISTRIBUSILOGISTIK]
+        Kasir POS Pusat                                         Manifes Rute Pengantaran Kurir
+        ├── Jual Satuan Hangat (Steamer Pusat)              ├── Muat Produk Frozen dari Cold Storage
+        └── Jual Pack Beku (Cold Storage Pusat)             └── Drop-Off di Titik Mitra
+        │
+        ▼
+        [4. OPERASIONAL TITIK MITRA]
+        Portal Web Mitra (Tablet/HP)
+        ├── Konfirmasi Terima Pasokan (e-POD)
+        ├── Panaskan Bakpau di Smart Steamer
+        ├── Catat Penjualan Harian
+        └── Unggah Foto Klaim Retur Basi
+        │
+        ▼
+        [5. REKONSILIASI & SETTLEMENT]
+        Audit Sistem Otomatis
+        ├── Verifikasi Retur oleh Superadmin
+        ├── Kalkulasi Net Settlement Statement
+        └── Tagihan Terbit & Restok Terjadwal
 
 5.  Fitur Utama Sistem
     A. Pengendalian Bahan Baku & Produksi Dapur (Kitchen MRP)
