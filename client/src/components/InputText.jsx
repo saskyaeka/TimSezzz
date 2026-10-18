@@ -1,8 +1,6 @@
 import { forwardRef } from 'react';
 
-const InputText = forwardRef(function InputText(
-  { id, label, error, ...props }, ref
-) {
+const InputText = forwardRef(function InputText({ id, label, error, ...props }, ref) {
   return (
     <div className="field">
       <label htmlFor={id}>{label}</label>
@@ -13,7 +11,11 @@ const InputText = forwardRef(function InputText(
         aria-describedby={error ? `${id}-error` : undefined}
         {...props}
       />
-      {error && <p id={`${id}-error`} className="field-error" role="alert">{error}</p>}
+      {error && (
+        <p id={`${id}-error`} className="field-error" role="alert">
+          {error}
+        </p>
+      )}
     </div>
   );
 });
