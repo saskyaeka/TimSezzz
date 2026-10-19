@@ -26,14 +26,14 @@ jobs:
 
     #Setup dan Build untuk Sisi Client (Frontend)
     - name: Install & Build Client
+      working-directory: ./client
       run: |
-        cd client
         npm install
         npm run build
 
     #Setup dan Test untuk Sisi Server (Backend)
     - name: Install Dependencies Server
+      working-directory: ./server
       run: |
-        cd server
         npm install
         # npm test 
