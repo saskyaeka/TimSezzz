@@ -1,0 +1,39 @@
+name: CI Pipeline (TimSezzz)
+
+on:
+  push:
+    branches: [ master, main, DevOps ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+
+    #Setup dan Build untuk Sisi Client (Frontend)
+    - name: Install & Build Client
+      run: |
+        cd client
+        npm install
+        npm run build
+
+    #Setup dan Test untuk Sisi Server (Backend)
+    - name: Install Dependencies Server
+      run: |
+        cd server
+        npm install
+        # npm test 
