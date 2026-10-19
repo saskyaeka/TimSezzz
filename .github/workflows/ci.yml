@@ -22,7 +22,7 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
-        cache: 'npm'
+        
 
     #Setup dan Build untuk Sisi Client (Frontend)
     - name: Install & Build Client
