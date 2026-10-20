@@ -2,34 +2,33 @@ const jwt = require('jsonwebtoken');
 
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; // Format: Bearer <TOKEN>
+  const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
     return res.status(401).json({
-      status: 'fail',
-      message: 'Akses ditolak. Token otentikasi tidak ditemukan.'
+      success: false,
+      message: 'Akses ditolak. Token autentikasi tidak ditemukan.',
     });
   }
 
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+  jwt.verify(token, process.env.JWT_SECRET, (err, decodedUser) => {
     if (err) {
       return res.status(403).json({
-        status: 'fail',
-        message: 'Sesi kedaluwarsa atau token tidak valid.'
+        success: false,
+        message: 'Sesi kedaluwarsa atau token tidak valid.',
       });
     }
-    req.user = user;
+    req.user = decodedUser;
     next();
   });
 };
 
-// Middleware untuk membatasi endpoint berdasarkan role
 const authorizeRoles = (...allowedRoles) => {
   return (req, res, next) => {
     if (!req.user || !allowedRoles.includes(req.user.role)) {
       return res.status(403).json({
-        status: 'fail',
-        message: 'Anda tidak memiliki hak akses untuk tindakan ini.'
+        success: false,
+        message: 'Akses ditolak. Peran Anda tidak diizinkan.',
       });
     }
     next();
