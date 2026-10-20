@@ -1,36 +1,38 @@
-const pool = require('../config/db');
+const db = require('../config/db');
 
 const UserModel = {
-  // Mencari user berdasarkan email beserta nama rolenya
   async findByEmail(email) {
     const query = `
-      SELECT u.id, u.name, u.email, u.password_hash, u.phone, u.is_active, r.name AS role_name
+      SELECT u.id, u.name, u.email, u.password_hash, u.is_active, r.name AS role
       FROM users u
       JOIN roles r ON u.role_id = r.id
-      WHERE u.email = $1;
+      WHERE u.email = $1
     `;
-    const { rows } = await pool.query(query, [email.toLowerCase().trim()]);
-    return rows[0];
+    const { rows } = await db.query(query, [email]);
+    return rows[0] || null;
   },
 
-  // Mencari ID role berdasarkan nama role ('owner', 'kasir', 'mitra', 'pengantar')
-  async findRoleIdByName(roleName) {
-    const query = `SELECT id FROM roles WHERE LOWER(name) = LOWER($1);`;
-    const { rows } = await pool.query(query, [roleName]);
-    return rows[0] ? rows[0].id : null;
-  },
-
-  // Mendaftarkan user baru
-  async create({ name, email, passwordHash, roleId, phone = null }) {
+  async createUser({ name, email, passwordHash, phone, roleId = 3 }) {
     const query = `
-      INSERT INTO users (name, email, password_hash, role_id, phone)
+      INSERT INTO users (role_id, name, email, password_hash, phone)
       VALUES ($1, $2, $3, $4, $5)
-      RETURNING id, name, email, role_id, created_at;
+      RETURNING id, role_id, name, email, phone, is_active, created_at
     `;
-    const values = [name.trim(), email.toLowerCase().trim(), passwordHash, roleId, phone];
-    const { rows } = await pool.query(query, values);
+    const values = [roleId, name, email, passwordHash, phone || null];
+    const { rows } = await db.query(query, values);
     return rows[0];
-  }
+  },
+
+  async findById(id) {
+    const query = `
+      SELECT u.id, u.name, u.email, u.phone, u.is_active, r.name AS role
+      FROM users u
+      JOIN roles r ON u.role_id = r.id
+      WHERE u.id = $1
+    `;
+    const { rows } = await db.query(query, [id]);
+    return rows[0] || null;
+  },
 };
 
 module.exports = UserModel;
