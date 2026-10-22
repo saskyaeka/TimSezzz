@@ -30,3 +30,10 @@ jobs:
       run: |
         npm install
         npm run build
+
+    # Setup dan Test untuk Sisi Server (Backend)
+    - name: Install & Test Server
+      working-directory: ./server
+      run: |
+        npm install
+        npm test
