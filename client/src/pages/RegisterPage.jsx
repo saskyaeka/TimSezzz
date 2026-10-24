@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import InputText from '../components/InputText';
 import PrimaryButton from '../components/PrimaryButton';
 import { registerSchema } from '../schemas/authSchema';
+import { authService } from '../api/authService';
 
 export default function RegisterPage() {
   const {
@@ -13,9 +15,20 @@ export default function RegisterPage() {
   } = useForm({ resolver: zodResolver(registerSchema) });
 
   const onSubmit = async (data) => {
-    // TODO: sambungkan ke API backend di task berikutnya
-    console.log('register', data);
-  };
+  setServerError('');
+  try {
+    await authService.register({
+      name: data.name,
+      email: data.email,
+      password: data.password,
+    });
+
+    alert('Registrasi berhasil! Silakan masuk.');
+    navigate('/login');
+  } catch (err) {
+    setServerError(err.message);
+  }
+};
 
   return (
     <main className="auth">
@@ -27,6 +40,22 @@ export default function RegisterPage() {
           </div>
         </div>
         <h1>Daftar</h1>
+
+        {serverError && (
+          <div
+            style={{
+              padding: '10px',
+              marginBottom: '15px',
+              backgroundColor: '#ffebee',
+              color: '#c62828',
+              borderRadius: '6px',
+              fontSize: '14px',
+            }}
+          >
+            {serverError}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit(onSubmit)} noValidate>
           <InputText
             id="name"

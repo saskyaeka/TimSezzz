@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import InputText from '../components/InputText';
 import PrimaryButton from '../components/PrimaryButton';
 import { loginSchema } from '../schemas/authSchema';
+import authService from '../api/authService';
 
 export default function LoginPage() {
   const {
@@ -13,8 +15,20 @@ export default function LoginPage() {
   } = useForm({ resolver: zodResolver(loginSchema) });
 
   const onSubmit = async (data) => {
-    // TODO: sambungkan ke API backend di task berikutnya
-    console.log('login', data);
+    setServerError('');
+    try {
+      const result = await authService.login({
+        email: data.email,
+        password: data.password,
+      });
+
+      localStorage.setItem('token', result.token);
+      localStorage.setItem('user', JSON.stringify(result.user));
+
+      navigate('/dashboard');
+    } catch (err) {
+      setServerError(err.message);
+    }
   };
 
   return (
@@ -28,6 +42,13 @@ export default function LoginPage() {
           </div>
         </div>
         <h1>Masuk</h1>
+
+        {serverError && (
+          <div style={{ padding: '10px', marginBottom: '15px', backgroundColor: '#ffebee', color: '#c62828', borderRadius: '6px', fontSize: '14px' }}>
+            {serverError}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit(onSubmit)} noValidate>
           <InputText
             id="email"
@@ -49,6 +70,7 @@ export default function LoginPage() {
             Masuk
           </PrimaryButton>
         </form>
+
         <div className="foot">
           <span>
             Belum punya akun?{' '}
