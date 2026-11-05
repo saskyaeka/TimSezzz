@@ -8,6 +8,8 @@ import { registerSchema } from '../schemas/authSchema';
 import { authService } from '../api/authService';
 
 export default function RegisterPage() {
+  const [serverError, setServerError] = useState('');
+  const navigate = useNavigate();
   const {
     register,
     handleSubmit,

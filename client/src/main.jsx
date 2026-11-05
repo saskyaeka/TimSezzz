@@ -4,10 +4,11 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './styles/auth.css';
 
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
       <App />
     </BrowserRouter>
-  </StrictMode>
+  </React.StrictMode>
 );
