@@ -27,13 +27,13 @@ export async function apiClient(endpoint, { body, ...customConfig } = {}) {
 
   // Ambil teks mentah terlebih dahulu untuk menghindari JSON crash jika body kosong
   const text = await response.text();
-  let data = {};
-  
+  let data;
+
   try {
     data = text ? JSON.parse(text) : {};
   } catch (err) {
     console.error('Format respons bukan JSON:', text);
-    throw new Error('Respons dari server tidak valid.');
+    throw new Error('Respons dari server tidak valid.', { cause: err });
   }
 
   if (!response.ok) {

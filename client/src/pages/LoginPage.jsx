@@ -46,7 +46,16 @@ export default function LoginPage() {
         <h1>Masuk</h1>
 
         {serverError && (
-          <div style={{ padding: '10px', marginBottom: '15px', backgroundColor: '#ffebee', color: '#c62828', borderRadius: '6px', fontSize: '14px' }}>
+          <div
+            style={{
+              padding: '10px',
+              marginBottom: '15px',
+              backgroundColor: '#ffebee',
+              color: '#c62828',
+              borderRadius: '6px',
+              fontSize: '14px',
+            }}
+          >
             {serverError}
           </div>
         )}

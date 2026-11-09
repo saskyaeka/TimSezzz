@@ -1,27 +1,52 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useState } from 'react';
+import { Navigate, useNavigate } from 'react-router-dom';
+import Navbar from '../layout/Navbar';
+import Toast from '../components/Toast';
+import { ROLES, ACCESS, ROLE_HEADS } from '../utils/roles';
+import { getInitialData } from '../api/erpService';
+import OwnerView from './roles/OwnerView';
+import ProduksiView from './roles/ProduksiView';
+import KasirView from './roles/KasirView';
+import KurirView from './roles/KurirView';
+import MitraView from './roles/MitraView';
+
+// Area kerja -> komponen tampilannya
+const VIEWS = {
+  owner: OwnerView,
+  produksi: ProduksiView,
+  kasir: KasirView,
+  pengantar: KurirView,
+  mitra: MitraView,
+};
+
+function readUser() {
+  try {
+    return JSON.parse(localStorage.getItem('user'));
+  } catch {
+    return null;
+  }
+}
+
+function toggleTheme() {
+  const root = document.documentElement;
+  const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const current = root.dataset.theme || (dark ? 'dark' : 'light');
+  root.dataset.theme = current === 'dark' ? 'light' : 'dark';
+}
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const [user, setUser] = useState(null);
+  const [user] = useState(readUser);
+  const allowedRoles = (user && ACCESS[user.role]) || [];
+  const [activeRole, setActiveRole] = useState(allowedRoles[0]);
+  const [tabs, setTabs] = useState({});
+  const [data, setData] = useState(getInitialData);
+  const [toast, setToast] = useState('');
+  const closeToast = useCallback(() => setToast(''), []);
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    const storedUser = localStorage.getItem('user');
-
-    if (!token) {
-      navigate('/login');
-      return;
-    }
-
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch (err) {
-        console.error('Gagal parse user:', err);
-      }
-    }
-  }, [navigate]);
+  if (!localStorage.getItem('token') || !user || allowedRoles.length === 0) {
+    return <Navigate to="/login" replace />;
+  }
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -29,23 +54,45 @@ export default function DashboardPage() {
     navigate('/login');
   };
 
+  const View = VIEWS[activeRole];
+  const tab = tabs[activeRole] ?? 0;
+
   return (
-    <div style={{ padding: '30px', fontFamily: 'sans-serif' }}>
-      <h1>Dashboard Paolotory Enterprise</h1>
-      <p>Halo, <b>{user?.name || 'User'}</b>! Role Anda: <b>{user?.role || 'Staff'}</b></p>
-      <button
-        onClick={handleLogout}
-        style={{
-          padding: '8px 16px',
-          backgroundColor: '#e53935',
-          color: '#fff',
-          border: 'none',
-          borderRadius: '4px',
-          cursor: 'pointer',
-        }}
-      >
-        Keluar (Logout)
-      </button>
+    <div className="app">
+      <Navbar
+        user={user}
+        allowedRoles={allowedRoles}
+        activeRole={activeRole}
+        onSelectRole={setActiveRole}
+        onLogout={handleLogout}
+        onToggleTheme={toggleTheme}
+      />
+      <main>
+        <div className="top">
+          <div>
+            <h1>{ROLES[activeRole].label}</h1>
+            <p>{ROLE_HEADS[activeRole]}</p>
+          </div>
+        </div>
+        <div className="tabs" role="tablist">
+          {ROLES[activeRole].tabs.map((name, i) => (
+            <button
+              key={name}
+              type="button"
+              className="tab"
+              role="tab"
+              aria-selected={i === tab}
+              onClick={() => setTabs({ ...tabs, [activeRole]: i })}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+        <div className="stack" role="tabpanel">
+          <View tab={tab} data={data} setData={setData} notify={setToast} user={user} />
+        </div>
+      </main>
+      <Toast message={toast} onClose={closeToast} />
     </div>
   );
 }
