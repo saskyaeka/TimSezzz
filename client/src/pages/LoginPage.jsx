@@ -1,15 +1,18 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import InputText from '../components/InputText';
 import PrimaryButton from '../components/PrimaryButton';
 import { loginSchema } from '../schemas/authSchema';
 import authService from '../api/authService';
 
 export default function LoginPage() {
-  const navigate = useNavigate();
+  // 1. Tambahkan baris ini agar 'serverError' dikenali
   const [serverError, setServerError] = useState('');
+
+  // 2. Tambahkan baris ini agar fitur pindah halaman (navigate) berfungsi
+  const navigate = useNavigate();
 
   const {
     register,
@@ -67,10 +70,6 @@ export default function LoginPage() {
           />
           <PrimaryButton type="submit" loading={isSubmitting}>Masuk</PrimaryButton>
         </form>
-
-        <div className="foot">
-          <span>Belum punya akun? <Link className="link" to="/register">Daftar</Link></span>
-        </div>
       </div>
     </main>
   );
