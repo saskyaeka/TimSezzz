@@ -1,38 +1,38 @@
 const jwt = require('jsonwebtoken');
+const UserModel = require('../models/UserModel');
 
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({
-      success: false,
-      message: 'Akses ditolak. Token autentikasi tidak ditemukan.',
-    });
+async function authenticateToken(req, res, next) {
+  const authorization = req.get('authorization') || '';
+  const match = authorization.match(/^Bearer\s+([^\s]+)$/i);
+  if (!match) {
+    return res.status(401).json({ success: false, message: 'Token autentikasi wajib dikirim.' });
   }
 
-  jwt.verify(token, process.env.JWT_SECRET, (err, decodedUser) => {
-    if (err) {
-      return res.status(403).json({
-        success: false,
-        message: 'Sesi kedaluwarsa atau token tidak valid.',
-      });
+  try {
+    const payload = jwt.verify(match[1], process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    if (!payload || typeof payload === 'string' || typeof payload.sub !== 'string') {
+      return res.status(401).json({ success: false, message: 'Token tidak valid atau kedaluwarsa.' });
     }
-    req.user = decodedUser;
-    next();
-  });
-};
 
-const authorizeRoles = (...allowedRoles) => {
-  return (req, res, next) => {
-    if (!req.user || !allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Akses ditolak. Peran Anda tidak diizinkan.',
-      });
+    const user = await UserModel.findPublicByEmail(payload.sub.toLowerCase());
+    if (!user || user.status !== 'aktif') {
+      return res.status(401).json({ success: false, message: 'Sesi tidak valid. Silakan masuk kembali.' });
     }
-    next();
-  };
-};
 
-module.exports = { authenticateToken, authorizeRoles };
+    req.user = {
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      partnerId: user.partner_id,
+    };
+    return next();
+  } catch (error) {
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      return res.status(401).json({ success: false, message: 'Token tidak valid atau kedaluwarsa.' });
+    }
+    console.error('Gagal memvalidasi sesi pengguna:', error);
+    return res.status(500).json({ success: false, message: 'Terjadi kesalahan pada server.' });
+  }
+}
+
+module.exports = { authenticateToken };
