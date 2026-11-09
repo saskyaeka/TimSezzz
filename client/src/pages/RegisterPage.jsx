@@ -17,20 +17,20 @@ export default function RegisterPage() {
   } = useForm({ resolver: zodResolver(registerSchema) });
 
   const onSubmit = async (data) => {
-  setServerError('');
-  try {
-    await authService.register({
-      name: data.name,
-      email: data.email,
-      password: data.password,
-    });
+    setServerError('');
+    try {
+      await authService.register({
+        name: data.name,
+        email: data.email,
+        password: data.password,
+      });
 
-    alert('Registrasi berhasil! Silakan masuk.');
-    navigate('/login');
-  } catch (err) {
-    setServerError(err.message);
-  }
-};
+      alert('Registrasi berhasil! Silakan masuk.');
+      navigate('/login');
+    } catch (err) {
+      setServerError(err.message);
+    }
+  };
 
   return (
     <main className="auth">
