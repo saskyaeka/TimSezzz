@@ -67,7 +67,7 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
 }
-h1 {
+.box h1 {
   font-family: 'Bricolage Grotesque', 'Instrument Sans', system-ui, sans-serif;
   font-size: 19px;
   font-weight: 700;
@@ -155,7 +155,7 @@ input:focus {
   color: var(--good);
 }
 
-.btn {
+.btn-auth {
   width: 100%;
   cursor: pointer;
   border: 1px solid var(--brand);
@@ -166,10 +166,10 @@ input:focus {
   font-weight: 600;
   font-size: 16px;
 }
-.btn:hover {
+.btn-auth:hover {
   filter: brightness(1.08);
 }
-.btn:disabled {
+.btn-auth:disabled {
   opacity: 0.6;
   cursor: wait;
 }
