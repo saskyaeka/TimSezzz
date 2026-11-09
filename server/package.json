@@ -7,9 +7,10 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 0",
+    "test": "node --test",
     "start": "node src/app.js",
-    "dev": "nodemon src/app.js"
+    "dev": "nodemon src/app.js",
+    "create:owner": "node src/scripts/createOwner.js"
   },
   "keywords": [],
   "author": "",

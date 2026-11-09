@@ -1,127 +1,80 @@
--- ===================================================
--- SKEMA BASIS DATA PAOLOTORY (PostgreSQL)
--- Berkas: docs/database_schema.sql
--- ===================================================
-
--- 1. TABEL ROLES
-CREATE TABLE roles (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(50) UNIQUE NOT NULL
+-- 1. Tabel Partners (Gerai Mitra)
+-- Menyimpan data dari S.partners
+CREATE TABLE partners (
+    id VARCHAR(50) PRIMARY KEY, -- Contoh dari web: 'p1', 'p2'
+    name VARCHAR(100) NOT NULL,
+    type VARCHAR(50) NOT NULL, -- Kedai kopi, Kantin, dll
+    zone VARCHAR(50) NOT NULL, -- Zona Pusat, Zona Selatan
+    pin VARCHAR(4) NOT NULL, -- 4 digit PIN gerai
+    sent INT DEFAULT 0,
+    sold INT DEFAULT 0,
+    returned INT DEFAULT 0
 );
 
--- Seeder Role Dasar
-INSERT INTO roles (name) VALUES 
-('owner'), 
-('kasir'), 
-('mitra'), 
-('pengantar');
-
--- 2. TABEL USERS
+-- 2. Tabel Users (Pengguna Sistem)
+-- Menyimpan data dari USERS array / S.user
 CREATE TABLE users (
-    id SERIAL PRIMARY KEY,
-    role_id INT NOT NULL REFERENCES roles(id) ON DELETE RESTRICT,
+    email VARCHAR(100) PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
-    email VARCHAR(100) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    phone VARCHAR(20),
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    role VARCHAR(20) NOT NULL, -- 'owner', 'kitchen', 'pos', 'courier', 'partner'
+    password_hash TEXT NOT NULL,
+    status VARCHAR(20) DEFAULT 'aktif',
+    partner_id VARCHAR(50) REFERENCES partners(id) ON DELETE SET NULL
+    -- partner_id wajib diisi jika role = 'partner'
 );
 
--- 3. TABEL INGREDIENTS (Bahan Baku)
+-- 3. Tabel Ingredients (Bahan Baku)
+-- Menyimpan data dari S.ingredients
 CREATE TABLE ingredients (
-    id SERIAL PRIMARY KEY,
+    id VARCHAR(50) PRIMARY KEY, -- 'tepung', 'gula', dll
     name VARCHAR(100) NOT NULL,
-    current_stock NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
-    unit VARCHAR(20) NOT NULL, -- contoh: 'gram', 'ml', 'pcs'
-    minimum_stock NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    unit VARCHAR(10) NOT NULL, -- 'g', 'pcs'
+    stock DECIMAL(10, 2) NOT NULL DEFAULT 0,
+    rop DECIMAL(10, 2) NOT NULL DEFAULT 0, -- Reorder Point
+    price DECIMAL(12, 2) NOT NULL
 );
 
--- 4. TABEL PRODUCTS (Katalog Bakpao)
-CREATE TABLE products (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    category VARCHAR(50) NOT NULL, -- contoh: 'manis', 'gurih'
-    price NUMERIC(12, 2) NOT NULL,
-    ready_stock INT NOT NULL DEFAULT 0,
-    image_url TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+-- 4. Tabel Batches (Stok Produksi Beku)
+-- Menyimpan data dari S.batches
+CREATE TABLE batches (
+    id VARCHAR(50) PRIMARY KEY, -- Format: 'BPK-20261005-01'
+    made_date DATE NOT NULL,
+    exp_date DATE NOT NULL,
+    qty INT NOT NULL,
+    left_qty INT NOT NULL
 );
 
--- 5. TABEL RECIPES / PRODUCT_INGREDIENTS (BOM Formula)
-CREATE TABLE recipes (
-    id SERIAL PRIMARY KEY,
-    product_id INT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    ingredient_id INT NOT NULL REFERENCES ingredients(id) ON DELETE RESTRICT,
-    quantity_required NUMERIC(10, 2) NOT NULL, -- takaran per 1 pcs produk
-    CONSTRAINT uq_product_ingredient UNIQUE (product_id, ingredient_id)
+-- 5. Tabel Manifests (Rute Pengiriman Kurir)
+-- Menyimpan data dari S.manifest
+CREATE TABLE manifests (
+    id VARCHAR(50) PRIMARY KEY,
+    partner_id VARCHAR(50) NOT NULL REFERENCES partners(id),
+    qty INT NOT NULL,
+    is_done BOOLEAN DEFAULT FALSE,
+    photo_url TEXT, -- Bukti e-POD kamera
+    photo_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 6. TABEL PRODUCTIONS (Riwayat Produksi Dapur)
-CREATE TABLE productions (
-    id SERIAL PRIMARY KEY,
-    product_id INT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    quantity_produced INT NOT NULL,
-    production_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    notes TEXT
+-- 6. Tabel Claims (Retur Mitra)
+-- Menyimpan data dari S.claims
+CREATE TABLE claims (
+    id VARCHAR(50) PRIMARY KEY,
+    partner_id VARCHAR(50) NOT NULL REFERENCES partners(id),
+    qty INT NOT NULL,
+    status VARCHAR(20) DEFAULT 'menunggu' 
+        CHECK (status IN ('menunggu', 'dikonfirmasi', 'ditolak')), -- 'menunggu', 'dikonfirmasi', 'ditolak'
+    claim_date DATE NOT NULL
 );
 
--- 7. TABEL ORDERS (Transaksi Kasir & Mitra)
+-- 7. Tabel Orders (Pesanan Stok dari Mitra)
+-- Menyimpan data dari S.orders
 CREATE TABLE orders (
-    id SERIAL PRIMARY KEY,
-    order_number VARCHAR(50) UNIQUE NOT NULL,
-    user_id INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-    total_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
-    payment_method VARCHAR(30) NOT NULL, -- 'cash', 'transfer', 'qris'
-    status VARCHAR(30) NOT NULL DEFAULT 'completed', -- 'completed', 'pending', 'delivering', 'cancelled'
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    id VARCHAR(50) PRIMARY KEY,
+    partner_id VARCHAR(50) NOT NULL REFERENCES partners(id),
+    qty INT NOT NULL,
+    note TEXT,
+    status VARCHAR(20) DEFAULT 'menunggu' 
+        CHECK (status IN ('menunggu', 'disetujui', 'ditolak')), -- 'menunggu', 'disetujui', 'ditolak'
+    order_date DATE NOT NULL
 );
-
--- TABEL ORDER_ITEMS (Detail Item Transaksi)
-CREATE TABLE order_items (
-    id SERIAL PRIMARY KEY,
-    order_id INT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-    product_id INT NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
-    quantity INT NOT NULL,
-    subtotal NUMERIC(12, 2) NOT NULL
-);
-
--- 8. TABEL DELIVERIES & DELIVERY_STOPS (Logistik Pengantaran)
-CREATE TABLE deliveries (
-    id SERIAL PRIMARY KEY,
-    courier_id INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-    delivery_date DATE NOT NULL DEFAULT CURRENT_DATE,
-    status VARCHAR(30) NOT NULL DEFAULT 'in_transit', -- 'in_transit', 'finished'
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE delivery_stops (
-    id SERIAL PRIMARY KEY,
-    delivery_id INT NOT NULL REFERENCES deliveries(id) ON DELETE CASCADE,
-    order_id INT REFERENCES orders(id) ON DELETE SET NULL,
-    destination_name VARCHAR(150) NOT NULL,
-    latitude NUMERIC(10, 7) NOT NULL,
-    longitude NUMERIC(10, 7) NOT NULL,
-    sequence_order INT NOT NULL, -- urutan rute (1, 2, 3...)
-    status VARCHAR(30) NOT NULL DEFAULT 'pending', -- 'pending', 'delivered'
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- 9. TABEL CASH_FLOWS (Pencatatan Arus Kas Keuangan)
-CREATE TABLE cash_flows (
-    id SERIAL PRIMARY KEY,
-    type VARCHAR(20) NOT NULL, -- 'income', 'expense'
-    category VARCHAR(50) NOT NULL, -- 'penjualan', 'belanja_bahan', 'operasional'
-    amount NUMERIC(12, 2) NOT NULL,
-    reference_id INT, -- opsional: menampung order_id atau production_id
-    notes TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- Indeks untuk optimasi query pencarian & filter
-CREATE INDEX idx_users_role ON users(role_id);
-CREATE INDEX idx_orders_user ON orders(user_id);
-CREATE INDEX idx_order_items_order ON order_items(order_id);
-CREATE INDEX idx_recipes_product ON recipes(product_id);
-CREATE INDEX idx_delivery_stops_delivery ON delivery_stops(delivery_id);
