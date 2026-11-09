@@ -41,11 +41,7 @@ export default function LoginPage() {
     <main className="auth">
       <div className="box">
         <div className="brand">
-          {/* salin <svg> logo dari HTML-mu, ubah stroke-width -> strokeWidth, stroke-linecap -> strokeLinecap */}
-          <div>
-            <b>PAOLOTORY</b>
-            <small>Enterprise</small>
-          </div>
+          <div><b>PAOLOTORY</b><small>Enterprise</small></div>
         </div>
         <h1>Masuk</h1>
 
@@ -81,9 +77,7 @@ export default function LoginPage() {
             error={errors.password?.message}
             {...register('password')}
           />
-          <PrimaryButton type="submit" loading={isSubmitting}>
-            Masuk
-          </PrimaryButton>
+          <PrimaryButton type="submit" loading={isSubmitting}>Masuk</PrimaryButton>
         </form>
       </div>
     </main>
