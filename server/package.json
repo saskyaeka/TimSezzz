@@ -8,6 +8,7 @@
   },
   "scripts": {
     "test": "node --test",
+    "test:integration": "node --test tests/postgresIntegration.test.js",
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
     "create:owner": "node src/scripts/createOwner.js"
@@ -21,12 +22,13 @@
     "cors": "^2.8.6",
     "dotenv": "^18.0.8",
     "express": "^5.3.0",
+    "express-rate-limit": "^8.7.3",
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
     "morgan": "^1.12.1",
     "pg": "^8.23.1"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "nodemon": "3.1.11"
   }
 }
