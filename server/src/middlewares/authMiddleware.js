@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const { getJwtSecret } = require('../config/jwt');
 const UserModel = require('../models/UserModel');
 
 async function authenticateToken(req, res, next) {
@@ -9,7 +10,7 @@ async function authenticateToken(req, res, next) {
   }
 
   try {
-    const payload = jwt.verify(match[1], process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    const payload = jwt.verify(match[1], getJwtSecret(), { algorithms: ['HS256'] });
     if (!payload || typeof payload === 'string' || typeof payload.sub !== 'string') {
       return res.status(401).json({ success: false, message: 'Token tidak valid atau kedaluwarsa.' });
     }

@@ -1,9 +1,7 @@
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
-
-if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
-  throw new Error('JWT_SECRET wajib diatur dan memiliki minimal 32 karakter.');
-}
+const { validateJwtConfig } = require('./config/jwt');
+validateJwtConfig();
 
 const express = require('express');
 const cors = require('cors');

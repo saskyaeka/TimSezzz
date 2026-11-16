@@ -1,11 +1,14 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const { getJwtSecret, getJwtExpiresIn } = require('../config/jwt');
 const UserModel = require('../models/UserModel');
 const {
   normalizeEmail,
   validateLoginInput,
   validateRegistrationInput,
 } = require('../utils/authValidation');
+
+const DUMMY_PASSWORD_HASH = '$2b$12$F./zdROxSejm58FG18HivuEj9Ox0pkIBbuxgdzjR9YI3COo4AJX1u';
 
 const publicUser = (user) => ({
   email: user.email,
@@ -58,7 +61,11 @@ async function login(req, res) {
 
   try {
     const user = await UserModel.findByEmail(normalizeEmail(input.email));
-    if (!user || !(await bcrypt.compare(input.password, user.password_hash))) {
+    const passwordMatches = await bcrypt.compare(
+      input.password,
+      user ? user.password_hash : DUMMY_PASSWORD_HASH
+    );
+    if (!user || !passwordMatches) {
       return res.status(401).json({ success: false, message: 'Email atau kata sandi salah.' });
     }
 
@@ -69,11 +76,10 @@ async function login(req, res) {
       return res.status(403).json({ success: false, message });
     }
 
-    const secret = process.env.JWT_SECRET;
     const token = jwt.sign(
       { sub: user.email },
-      secret,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '1d', algorithm: 'HS256' }
+      getJwtSecret(),
+      { expiresIn: getJwtExpiresIn(), algorithm: 'HS256' }
     );
     const profile = publicUser(user);
 

@@ -23,6 +23,9 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
 CREATE UNIQUE INDEX IF NOT EXISTS partners_name_case_insensitive_unique
   ON partners (LOWER(name));
 
+CREATE INDEX IF NOT EXISTS users_email_lower_idx
+  ON users (LOWER(email));
+
 CREATE TABLE IF NOT EXISTS business_settings (
   key VARCHAR(80) PRIMARY KEY,
   numeric_value NUMERIC(14, 2) NOT NULL CHECK (numeric_value >= 0),
