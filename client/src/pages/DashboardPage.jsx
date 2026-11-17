@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import Navbar from '../layout/Navbar';
 import Toast from '../components/Toast';
-import { ROLES, ACCESS, ROLE_HEADS } from '../utils/roles';
+import { ROLES, ACCESS, ROLE_HEADS, areaOf } from '../utils/roles';
 import { getInitialData } from '../api/erpService';
 import OwnerView from './roles/OwnerView';
 import ProduksiView from './roles/ProduksiView';
@@ -37,7 +37,7 @@ function toggleTheme() {
 export default function DashboardPage() {
   const navigate = useNavigate();
   const [user] = useState(readUser);
-  const allowedRoles = (user && ACCESS[user.role]) || [];
+  const allowedRoles = (user && ACCESS[areaOf(user.role)]) || [];
   const [activeRole, setActiveRole] = useState(allowedRoles[0]);
   const [tabs, setTabs] = useState({});
   const [data, setData] = useState(getInitialData);
