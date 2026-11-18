@@ -4,6 +4,7 @@ import MitraHarga from './owner/MitraHarga';
 import AsetDapur from './owner/AsetDapur';
 import Persetujuan from './owner/Persetujuan';
 import Settlement from './owner/Settlement';
+import Pengguna from './owner/Pengguna';
 
 export default function OwnerView({ tab, data, setData, notify, user }) {
   const actions = { data, setData, notify, user };
@@ -13,6 +14,7 @@ export default function OwnerView({ tab, data, setData, notify, user }) {
   if (tab === 2) return <AsetDapur {...actions} />;
   if (tab === 3) return <Persetujuan {...actions} />;
   if (tab === 4) return <Settlement data={data} />;
+  if (tab === 5) return <Pengguna {...actions} />;
 
   return <div className="empty">Pemilik: tab "{ROLES.owner.tabs[tab]}" belum dipindahkan</div>;
 }

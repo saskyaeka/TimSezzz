@@ -4,6 +4,7 @@ import Navbar from '../layout/Navbar';
 import Toast from '../components/Toast';
 import { ROLES, ACCESS, ROLE_HEADS, areaOf } from '../utils/roles';
 import { getInitialData } from '../api/erpService';
+import { tabBadge } from '../utils/erpHelpers';
 import OwnerView from './roles/OwnerView';
 import ProduksiView from './roles/ProduksiView';
 import KasirView from './roles/KasirView';
@@ -85,11 +86,24 @@ export default function DashboardPage() {
               onClick={() => setTabs({ ...tabs, [activeRole]: i })}
             >
               {name}
+              {tabBadge(data, activeRole, i) > 0 && (
+                <>
+                  {' '}
+                  <span className="pill warn">{tabBadge(data, activeRole, i)}</span>
+                </>
+              )}
             </button>
           ))}
         </div>
         <div className="stack" role="tabpanel">
-          <View tab={tab} data={data} setData={setData} notify={setToast} user={user} />
+          <View
+            tab={tab}
+            data={data}
+            setData={setData}
+            notify={setToast}
+            user={user}
+            goTab={(i) => setTabs({ ...tabs, [activeRole]: i })}
+          />
         </div>
       </main>
       <Toast message={toast} onClose={closeToast} />
