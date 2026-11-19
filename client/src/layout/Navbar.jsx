@@ -1,4 +1,4 @@
-import { ROLES } from '../utils/roles';
+import { ROLES, areaOf } from '../utils/roles';
 
 export default function Navbar({
   user,
@@ -64,7 +64,7 @@ export default function Navbar({
 
       <div className="usercard">
         <b>{user.name}</b>
-        <span className="small muted">{ROLES[user.role]?.label}</span>
+        <span className="small muted">{ROLES[areaOf(user.role)]?.label}</span>
         <span className="small muted">{user.email}</span>
         <button type="button" className="btn sm" onClick={onLogout}>
           Keluar

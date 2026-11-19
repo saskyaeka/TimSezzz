@@ -37,6 +37,18 @@ export const ACCESS = {
   mitra: ['mitra'],
 };
 
+// Nama peran di server (kolom users.role) -> nama area kerja di client
+export const ROLE_AREA = {
+  owner: 'owner',
+  kitchen: 'produksi',
+  pos: 'kasir',
+  courier: 'pengantar',
+  partner: 'mitra',
+};
+
+// Mengubah peran dari server menjadi nama area kerja. Nama yang sudah berupa area dibiarkan.
+export const areaOf = (role) => ROLE_AREA[role] ?? role;
+
 // Kalimat pengantar di bawah judul halaman
 export const ROLE_HEADS = {
   owner: 'Pantau seluruh jaringan titip-jual dan putuskan dari satu layar.',
