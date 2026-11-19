@@ -1,4 +1,16 @@
 {
+  "name": "timsezzz-root",
+  "version": "1.0.0",
+  "scripts": {
+    "dev:server": "npm --prefix server run dev",
+    "start:server": "npm --prefix server start",
+    "dev:client": "npm --prefix client run dev",
+    "build:client": "npm --prefix client run build",
+    "db:setup": "npm --prefix server run db:setup",
+    "create:owner": "npm --prefix server run create:owner",
+    "test:server": "npm --prefix server test",
+    "test": "npm --prefix server test"
+  },
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
@@ -7,3 +19,4 @@
     "pg": "^8.23.1"
   }
 }
+
