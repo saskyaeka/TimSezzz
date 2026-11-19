@@ -1,26 +1,46 @@
 // Rumus turunan dari data dashboard.
 // Semua fungsi menerima `data` (isi getInitialData) sebagai parameter pertama.
 
-export const findPartner = (data, id) => data.partners.find((p) => p.id === id);
-export const findIngredient = (data, id) => data.ingredients.find((i) => i.id === id);
+export const findPartner = (data, id) => (data?.partners || []).find((p) => p.id === id);
+export const findIngredient = (data, id) => (data?.ingredients || []).find((i) => (i.id || i.ingredient_id) === id);
 
 // Sisa stok di satu mitra
-export const stockOf = (p) => p.sent - p.sold - p.returned;
+export const stockOf = (p) => (p?.sent || 0) - (p?.sold || 0) - (p?.returned || 0);
 
-// Total butir di cold storage pusat
-export const coldStock = (data) => data.batches.reduce((a, b) => a + b.left, 0);
+// [INTEGRASI BACKEND: Membaca left_qty dari PostgreSQL agar tidak menghasilkan NaN]
+export const coldStock = (data) =>
+  (data?.batches || []).reduce((a, b) => a + Number(b.left_qty ?? b.left ?? b.qty ?? 0), 0);
 
 // Total stok yang sedang berada di mitra
-export const floating = (data) => data.partners.reduce((a, p) => a + stockOf(p), 0);
+export const floating = (data) => (data?.partners || []).reduce((a, p) => a + stockOf(p), 0);
 
 // Total butir yang masih di jalan (manifes belum selesai)
 export const inTransit = (data) =>
-  data.manifest.filter((m) => !m.done).reduce((a, m) => a + m.qty, 0);
+  (data?.manifest || data?.manifests || []).filter((m) => !m.done && m.status !== 'terkirim').reduce((a, m) => a + Number(m.qty || 0), 0);
 
-// Harga pokok produksi: bahan + operasional, dan per butir
+// [INTEGRASI BACKEND: Penanganan HPP dengan struktur recipe / BOM dari database]
 export function hpp(data) {
-  const mat = data.bom.items.reduce((a, [id, q]) => a + findIngredient(data, id).price * q, 0);
-  return { mat, total: mat + data.bom.opex, per: (mat + data.bom.opex) / data.bom.yield };
+  const recipe = data?.recipe || data?.bom || {};
+  const bomMap = recipe.bom || (typeof recipe.items === 'object' && !Array.isArray(recipe.items) ? recipe.items : {});
+  const opex = Number(recipe.opex ?? recipe.opex_per_recipe ?? 45000);
+  const yieldQty = Number(recipe.yield ?? recipe.yield_qty ?? 60) || 1;
+
+  let mat = 0;
+  if (Array.isArray(recipe.items)) {
+    mat = recipe.items.reduce((a, item) => {
+      const id = Array.isArray(item) ? item[0] : (item.ingredient_id || item.id);
+      const q = Array.isArray(item) ? item[1] : (item.quantity ?? item.qty ?? 0);
+      const ing = findIngredient(data, id);
+      return a + (ing?.price || 0) * Number(q || 0);
+    }, 0);
+  } else if (bomMap && typeof bomMap === 'object') {
+    Object.entries(bomMap).forEach(([id, q]) => {
+      const ing = findIngredient(data, id);
+      mat += (ing?.price || 0) * Number(q || 0);
+    });
+  }
+
+  return { mat, total: mat + opex, per: (mat + opex) / yieldQty };
 }
 
 // Tagihan satu mitra: hanya bakpau terjual yang ditagih, retur tidak ditagih

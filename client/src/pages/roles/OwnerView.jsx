@@ -6,8 +6,9 @@ import Persetujuan from './owner/Persetujuan';
 import Settlement from './owner/Settlement';
 import Pengguna from './owner/Pengguna';
 
-export default function OwnerView({ tab, data, setData, notify, user }) {
-  const actions = { data, setData, notify, user };
+// [INTEGRASI BACKEND: Meneruskan refreshData agar form dapat menyegarkan data dari server]
+export default function OwnerView({ tab, data, setData, notify, user, refreshData }) {
+  const actions = { data, setData, notify, user, refreshData };
 
   if (tab === 0) return <Ringkasan data={data} />;
   if (tab === 1) return <MitraHarga {...actions} />;
