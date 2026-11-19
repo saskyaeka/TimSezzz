@@ -1,6 +1,6 @@
 -- 1. Tabel Partners (Gerai Mitra)
 -- Menyimpan data dari S.partners
-CREATE TABLE partners (
+CREATE TABLE IF NOT EXISTS partners (
     id VARCHAR(50) PRIMARY KEY, -- Contoh dari web: 'p1', 'p2'
     name VARCHAR(100) NOT NULL,
     type VARCHAR(50) NOT NULL, -- Kedai kopi, Kantin, dll
@@ -13,7 +13,7 @@ CREATE TABLE partners (
 
 -- 2. Tabel Users (Pengguna Sistem)
 -- Menyimpan data dari USERS array / S.user
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(100) PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     role VARCHAR(20) NOT NULL, -- 'owner', 'kitchen', 'pos', 'courier', 'partner'
@@ -25,7 +25,7 @@ CREATE TABLE users (
 
 -- 3. Tabel Ingredients (Bahan Baku)
 -- Menyimpan data dari S.ingredients
-CREATE TABLE ingredients (
+CREATE TABLE IF NOT EXISTS ingredients (
     id VARCHAR(50) PRIMARY KEY, -- 'tepung', 'gula', dll
     name VARCHAR(100) NOT NULL,
     unit VARCHAR(10) NOT NULL, -- 'g', 'pcs'
@@ -36,7 +36,7 @@ CREATE TABLE ingredients (
 
 -- 4. Tabel Batches (Stok Produksi Beku)
 -- Menyimpan data dari S.batches
-CREATE TABLE batches (
+CREATE TABLE IF NOT EXISTS batches (
     id VARCHAR(50) PRIMARY KEY, -- Format: 'BPK-20261005-01'
     made_date DATE NOT NULL,
     exp_date DATE NOT NULL,
@@ -46,7 +46,7 @@ CREATE TABLE batches (
 
 -- 5. Tabel Manifests (Rute Pengiriman Kurir)
 -- Menyimpan data dari S.manifest
-CREATE TABLE manifests (
+CREATE TABLE IF NOT EXISTS manifests (
     id VARCHAR(50) PRIMARY KEY,
     partner_id VARCHAR(50) NOT NULL REFERENCES partners(id),
     qty INT NOT NULL,
@@ -58,7 +58,7 @@ CREATE TABLE manifests (
 
 -- 6. Tabel Claims (Retur Mitra)
 -- Menyimpan data dari S.claims
-CREATE TABLE claims (
+CREATE TABLE IF NOT EXISTS claims (
     id VARCHAR(50) PRIMARY KEY,
     partner_id VARCHAR(50) NOT NULL REFERENCES partners(id),
     qty INT NOT NULL,
@@ -69,7 +69,7 @@ CREATE TABLE claims (
 
 -- 7. Tabel Orders (Pesanan Stok dari Mitra)
 -- Menyimpan data dari S.orders
-CREATE TABLE orders (
+CREATE TABLE IF NOT EXISTS orders (
     id VARCHAR(50) PRIMARY KEY,
     partner_id VARCHAR(50) NOT NULL REFERENCES partners(id),
     qty INT NOT NULL,
