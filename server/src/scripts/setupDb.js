@@ -18,7 +18,10 @@ async function main() {
 
   await db.transaction(async (client) => {
     // 1. Skema dasar (tabel utama)
-    await runSqlFile(client, '../../../docs/database_scheme.sql');
+    const coreSchemaRelPath = fs.existsSync(path.resolve(__dirname, '../db/core_schema.sql'))
+      ? '../db/core_schema.sql'
+      : '../../../docs/database_scheme.sql';
+    await runSqlFile(client, coreSchemaRelPath);
 
     // 2. Skema operasional (kolom tambahan, tabel transaksi, audit, BOM, dll.)
     await runSqlFile(client, '../db/operations_schema.sql');
