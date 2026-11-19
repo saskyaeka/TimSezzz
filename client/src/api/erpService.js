@@ -1,10 +1,31 @@
 import { TODAY, addDays, batchNo } from '../utils/formatters';
+import { findIngredient, stdUse } from '../utils/erpHelpers';
 
 // Data contoh untuk dashboard (sementara).
 // Server belum punya endpoint bahan, produksi, dan retur, jadi data awal diambil dari prototipe.
 // Nanti isi fungsi ini diganti pemanggilan API memakai apiClient.
-export function getInitialData() {
+// Catatan pengurangan bahan awal (contoh). tweak = tambahan pemakaian dari resep (mode manual)
+function seedUsage(data, days, mode, resep, note, tweak) {
+  const made = addDays(TODAY, -days);
   return {
+    t: made,
+    mode,
+    resep,
+    qty: resep * data.bom.yield,
+    batch: batchNo(made, 1),
+    by: 'Manajer Dapur',
+    note,
+    items: data.bom.items.map(([id]) => {
+      const ing = findIngredient(data, id);
+      const std = stdUse(data, id, resep);
+      const used = tweak && tweak[id] ? +(std + tweak[id]).toFixed(3) : std;
+      return { id, name: ing.name, unit: ing.unit, used, std };
+    }),
+  };
+}
+
+export function getInitialData() {
+  const data = {
     // Bahan baku: stock = stok sekarang, rop = batas pesan ulang, price = harga per satuan (Rp)
     ingredients: [
       { id: 'tepung', name: 'Tepung terigu', unit: 'g', stock: 42000, rop: 18000, price: 12 },
@@ -190,5 +211,34 @@ export function getInitialData() {
 
     // Draf bukti serah terima kurir
     podDraft: null,
+
+    // Pesanan stok dari mitra, kosong saat awal
+    orders: [],
+
+    // Akun pengguna (contoh). role memakai nama peran di server
+    users: [
+      { email: 'pemilik@paolotory.id', name: 'Pemilik Usaha', role: 'owner', status: 'aktif' },
+      { email: 'produksi@paolotory.id', name: 'Manajer Dapur', role: 'kitchen', status: 'aktif' },
+      { email: 'kasir@paolotory.id', name: 'Kasir Pusat', role: 'pos', status: 'aktif' },
+      { email: 'kurir@paolotory.id', name: 'Kurir Pagi', role: 'courier', status: 'aktif' },
+      {
+        email: 'mitra@paolotory.id',
+        name: 'Rina Wulandari',
+        role: 'partner',
+        partner: 'p1',
+        status: 'aktif',
+      },
+    ],
   };
+
+  // Catatan pengurangan bahan: satu otomatis, satu manual dengan selisih dari resep
+  data.usage = [
+    seedUsage(data, 2, 'auto', 3, '', null),
+    seedUsage(data, 4, 'manual', 2, 'Adonan lebih basah, tepung ditambah', {
+      tepung: 800,
+      ragi: 10,
+    }),
+  ];
+
+  return data;
 }
