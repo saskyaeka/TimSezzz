@@ -1,13 +1,19 @@
+// [INTEGRASI BACKEND: Halaman manajemen pengguna terhubung langsung ke PostgreSQL API]
 import { useState } from 'react';
 import { ROLES, areaOf } from '../../../utils/roles';
 import { addLog } from '../../../utils/erpHelpers';
+import erpService from '../../../api/erpService';
 
-const STATUS = { aktif: ['good', 'Aktif'], nonaktif: ['idle', 'Nonaktif'] };
+const STATUS = {
+  aktif: ['good', 'Aktif'],
+  nonaktif: ['idle', 'Nonaktif'],
+  pending: ['warn', 'Menunggu'],
+};
 
 // Peran akun memakai nama peran di server
 const ALL_ROLES = ['owner', 'kitchen', 'pos', 'courier', 'partner'];
 const NEW_ROLES = ['pos', 'kitchen', 'courier', 'partner'];
-const roleLabel = (role) => ROLES[areaOf(role)].label;
+const roleLabel = (role) => ROLES[areaOf(role)]?.label || role;
 
 // Hak akses per peran: 1 = boleh, 0 = tidak, teks = catatan
 const MATRIX = [
@@ -20,7 +26,7 @@ const MATRIX = [
 ];
 
 // Tab 6: Pengguna (buat akun, atur peran, aktifkan atau nonaktifkan)
-export default function Pengguna({ data, setData, notify, user }) {
+export default function Pengguna({ data, setData, notify, user, refreshData }) {
   const firstPartner = data.partners[0]?.id ?? '';
   const [form, setForm] = useState({
     name: '',
@@ -30,59 +36,116 @@ export default function Pengguna({ data, setData, notify, user }) {
     partner: firstPartner,
   });
   const [msg, setMsg] = useState(null); // { text, kind }
+  const [submitting, setSubmitting] = useState(false);
 
   const setField = (key) => (e) => setForm({ ...form, [key]: e.target.value });
   const updateUser = (email, change) =>
     setData((d) => ({ ...d, users: d.users.map((u) => (u.email === email ? change(u) : u)) }));
 
-  const create = (e) => {
+  // [INTEGRASI BACKEND: Membuat akun baru dan menyimpannya secara permanen ke PostgreSQL via POST /api/owner/users]
+  const create = async (e) => {
     e.preventDefault();
     const name = form.name.trim();
     const email = form.email.trim().toLowerCase();
     const fail = (text) => setMsg({ kind: 'bad', text });
 
-    if (name.length < 3) return fail('Isi nama lengkap, minimal 3 huruf.');
+    if (name.length < 2) return fail('Isi nama lengkap, minimal 2 karakter.');
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
       return fail('Isi email yang valid, contoh nama@usaha.id.');
     if (form.password.length < 8) return fail('Kata sandi minimal 8 karakter.');
+    if (!/[A-Za-z]/.test(form.password) || !/\d/.test(form.password))
+      return fail('Kata sandi harus mengandung kombinasi huruf dan angka.');
     if (!NEW_ROLES.includes(form.role)) return fail('Pilih peran.');
-    if (form.role === 'partner' && !data.partners.some((p) => p.id === form.partner)) {
+    if (form.role === 'partner' && !form.partner) {
       return fail('Pilih gerai untuk akun mitra.');
     }
-    if (data.users.some((u) => u.email === email))
+    if (data.users.some((u) => u.email === email)) {
       return fail('Email ini sudah dipakai akun lain.');
+    }
 
-    // Kata sandi hanya diperiksa di sini dan tidak disimpan. Nanti dikirim ke server.
-    const account = { email, name, role: form.role, status: 'aktif' };
-    if (form.role === 'partner') account.partner = form.partner;
-    setData((d) =>
-      addLog(
-        { ...d, users: [...d.users, account] },
-        'pengguna',
-        `Akun ${name} (${roleLabel(form.role)}) dibuat`,
-        user.name
-      )
-    );
-    setForm({ name: '', email: '', password: '', role: 'pos', partner: firstPartner });
-    setMsg({ kind: 'good', text: `Akun ${name} dibuat. Email: ${email}` });
+    setSubmitting(true);
+    setMsg(null);
+    try {
+      const res = await erpService.createUser({
+        name,
+        email,
+        password: form.password,
+        role: form.role,
+        partnerId: form.role === 'partner' ? form.partner : undefined,
+      });
+
+      const newUser = res?.data?.user || {
+        email,
+        name,
+        role: form.role,
+        status: 'aktif',
+        partner_id: form.partner,
+      };
+
+      setData((d) =>
+        addLog(
+          { ...d, users: [...d.users.filter((u) => u.email !== email), newUser] },
+          'pengguna',
+          `Akun ${name} (${roleLabel(form.role)}) berhasil disimpan ke database`,
+          user.name
+        )
+      );
+
+      if (typeof refreshData === 'function') {
+        refreshData();
+      }
+
+      setForm({ name: '', email: '', password: '', role: 'pos', partner: firstPartner });
+      setMsg({ kind: 'good', text: `Akun ${name} berhasil dibuat dan tersimpan di database! Email: ${email}` });
+    } catch (err) {
+      setMsg({ kind: 'bad', text: err.message || 'Gagal menyimpan akun ke database.' });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const changeRole = (u, role) => {
-    updateUser(u.email, (x) => {
-      const next = { ...x, role };
-      if (role === 'partner') next.partner = x.partner || firstPartner;
-      else delete next.partner;
-      return next;
-    });
-    notify('Akses ' + u.name + ' diperbarui');
+  // [INTEGRASI BACKEND: Mengubah peran akun di database PostgreSQL via PATCH /api/owner/users/:email]
+  const changeRole = async (u, role) => {
+    try {
+      await erpService.updateUser(u.email, {
+        role,
+        partnerId: role === 'partner' ? (u.partner || u.partner_id || firstPartner) : null,
+      });
+      updateUser(u.email, (x) => {
+        const next = { ...x, role };
+        if (role === 'partner') next.partner = x.partner || firstPartner;
+        else delete next.partner;
+        return next;
+      });
+      notify(`Peran ${u.name} berhasil diperbarui menjadi ${roleLabel(role)}`);
+      if (typeof refreshData === 'function') refreshData();
+    } catch (err) {
+      notify(err.message || 'Gagal memperbarui peran di server');
+    }
   };
-  const changePartner = (u, partner) => {
-    updateUser(u.email, (x) => ({ ...x, partner }));
-    notify('Akses ' + u.name + ' diperbarui');
+
+  // [INTEGRASI BACKEND: Mengubah penautan gerai mitra di database PostgreSQL via PATCH /api/owner/users/:email]
+  const changePartner = async (u, partner) => {
+    try {
+      await erpService.updateUser(u.email, { partnerId: partner });
+      updateUser(u.email, (x) => ({ ...x, partner, partner_id: partner }));
+      notify(`Gerai untuk ${u.name} berhasil diperbarui di database`);
+      if (typeof refreshData === 'function') refreshData();
+    } catch (err) {
+      notify(err.message || 'Gagal memperbarui gerai di server');
+    }
   };
-  const setStatus = (u, status) => {
-    updateUser(u.email, (x) => ({ ...x, status }));
-    notify(status === 'aktif' ? `${u.name} aktif` : `${u.name} dinonaktifkan`);
+
+  // [INTEGRASI BACKEND: Mengaktifkan atau menonaktifkan akun di database via PATCH /api/owner/users/:email]
+  const setStatus = async (u, status) => {
+    try {
+      await erpService.updateUser(u.email, { status });
+      updateUser(u.email, (x) => ({ ...x, status }));
+      notify(status === 'aktif' ? `${u.name} diaktifkan di database` : `${u.name} dinonaktifkan di database`);
+      if (typeof refreshData === 'function') refreshData();
+    } catch (err) {
+      notify(err.message || 'Gagal mengubah status di server');
+    }
   };
 
   return (
@@ -90,7 +153,7 @@ export default function Pengguna({ data, setData, notify, user }) {
       <form className="panel" style={{ maxWidth: 640 }} onSubmit={create} noValidate>
         <h2>Buat akun baru</h2>
         <p className="muted small" style={{ margin: '4px 0 12px' }}>
-          Akun langsung aktif. Berikan email dan kata sandi ini kepada orang yang bersangkutan.
+          Akun langsung tersimpan di database dan berstatus aktif. Berikan email dan kata sandi ini kepada staf terkait.
         </p>
         <div className="grid g2">
           <div className="field">
@@ -108,7 +171,7 @@ export default function Pengguna({ data, setData, notify, user }) {
             />
           </div>
           <div className="field">
-            <label htmlFor="uaPass">Kata sandi (minimal 8 karakter)</label>
+            <label htmlFor="uaPass">Kata sandi (minimal 8 karakter, huruf & angka)</label>
             <input
               id="uaPass"
               type="password"
@@ -145,15 +208,15 @@ export default function Pengguna({ data, setData, notify, user }) {
             {msg.text}
           </div>
         )}
-        <button type="submit" className="btn primary">
-          Buat akun
+        <button type="submit" className="btn primary" disabled={submitting}>
+          {submitting ? 'Menyimpan ke database...' : 'Buat akun'}
         </button>
       </form>
 
       <div className="panel">
-        <h2>Pengguna</h2>
+        <h2>Pengguna Terdaftar</h2>
         <p className="muted small" style={{ margin: '4px 0 8px' }}>
-          Atur peran dan nonaktifkan akun yang tidak lagi bertugas.
+          Data diambil langsung dari tabel pengguna di PostgreSQL. Atur peran dan aktifkan/nonaktifkan akun.
         </p>
         <div className="scroll">
           <table>
@@ -169,6 +232,7 @@ export default function Pengguna({ data, setData, notify, user }) {
             <tbody>
               {data.users.map((u) => {
                 const me = u.email === user.email;
+                const userStatus = STATUS[u.status] || ['idle', u.status || 'Tidak diketahui'];
                 return (
                   <tr key={u.email}>
                     <td>
@@ -198,10 +262,11 @@ export default function Pengguna({ data, setData, notify, user }) {
                       {u.role === 'partner' ? (
                         <select
                           className="mini"
-                          value={u.partner}
+                          value={u.partner || u.partner_id || ''}
                           aria-label={`Gerai ${u.name}`}
                           onChange={(e) => changePartner(u, e.target.value)}
                         >
+                          <option value="">-- Pilih gerai --</option>
                           {data.partners.map((p) => (
                             <option key={p.id} value={p.id}>
                               {p.name}
@@ -213,7 +278,7 @@ export default function Pengguna({ data, setData, notify, user }) {
                       )}
                     </td>
                     <td>
-                      <span className={`pill ${STATUS[u.status][0]}`}>{STATUS[u.status][1]}</span>
+                      <span className={`pill ${userStatus[0]}`}>{userStatus[1]}</span>
                     </td>
                     <td className="r">
                       {!me && u.status === 'aktif' && (

@@ -183,6 +183,10 @@ async function getPartnerInventory(req, res) {
     data: {
       inventory: {
         partnerId,
+        partnerName: partner.name,
+        name: partner.name,
+        type: partner.type,
+        zone: partner.zone,
         sent: partner.sent,
         sold: partner.sold,
         returned: partner.returned,

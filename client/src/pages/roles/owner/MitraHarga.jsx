@@ -1,44 +1,61 @@
+// [INTEGRASI BACKEND: Halaman pengaturan harga dan pendaftaran mitra terhubung ke PostgreSQL]
 import { useState } from 'react';
 import { rp, nf } from '../../../utils/formatters';
 import { stockOf, addLog } from '../../../utils/erpHelpers';
+import erpService from '../../../api/erpService';
 
 // Tab 2: Mitra & harga
-export default function MitraHarga({ data, setData, notify, user }) {
+export default function MitraHarga({ data, setData, notify, user, refreshData }) {
   return (
     <>
-      <PriceSettings data={data} setData={setData} notify={notify} user={user} />
+      <PriceSettings data={data} setData={setData} notify={notify} user={user} refreshData={refreshData} />
       <PartnerTable data={data} />
-      <AddPartnerForm data={data} setData={setData} user={user} />
+      <AddPartnerForm data={data} setData={setData} user={user} refreshData={refreshData} />
     </>
   );
 }
 
-function PriceSettings({ data, setData, notify, user }) {
+function PriceSettings({ data, setData, notify, user, refreshData }) {
   const { mitra, kasir } = data.price;
 
-  // Dipanggil saat kolom harga ditinggalkan (blur) atau Enter, seperti event "change" di prototipe
-  const commit = (key) => (e) => {
+  // [INTEGRASI BACKEND: Memperbarui harga mitra & kasir ke database via PATCH /api/owner/prices]
+  const commit = (key) => async (e) => {
     const v = Math.round(Number(e.target.value));
     const newMitra = key === 'mitra' ? v : mitra;
     const newKasir = key === 'kasir' ? v : kasir;
 
     if (!(v >= 1000 && v <= 100000)) {
       notify('Harga harus antara Rp1.000 dan Rp100.000');
-    } else if (newKasir < newMitra) {
+      e.target.value = data.price[key];
+      return;
+    }
+    if (newKasir < newMitra) {
       notify('Harga kasir tidak boleh lebih rendah dari harga mitra');
-    } else if (v !== data.price[key]) {
+      e.target.value = data.price[key];
+      return;
+    }
+    if (v === data.price[key]) return;
+
+    try {
+      await erpService.updatePrices({
+        partnerPrice: newMitra,
+        centralPrice: newKasir,
+      });
+
       setData((d) =>
         addLog(
           { ...d, price: { ...d.price, [key]: v } },
           'harga',
-          `Harga ${key} menjadi ${rp(v)}/butir`,
+          `Harga ${key} menjadi ${rp(v)}/butir (disimpan di database)`,
           user.name
         )
       );
-      notify('Harga diperbarui');
-      return;
+      notify('Harga berhasil diperbarui di database');
+      if (typeof refreshData === 'function') refreshData();
+    } catch (err) {
+      notify(err.message || 'Gagal memperbarui harga di database');
+      e.target.value = data.price[key];
     }
-    e.target.value = data.price[key]; // kembalikan ke harga yang berlaku
   };
 
   const blurOnEnter = (e) => {
@@ -109,22 +126,30 @@ function PartnerTable({ data }) {
             </tr>
           </thead>
           <tbody>
-            {data.partners.map((p) => (
-              <tr key={p.id}>
-                <td>
-                  <b>{p.name}</b>
+            {data.partners.length ? (
+              data.partners.map((p) => (
+                <tr key={p.id}>
+                  <td>
+                    <b>{p.name}</b>
+                  </td>
+                  <td>{p.type}</td>
+                  <td>{p.zone}</td>
+                  <td className="r num">{nf(p.sent)}</td>
+                  <td className="r num">{nf(p.sold)}</td>
+                  <td className="r num">
+                    {nf(stockOf(p))}{' '}
+                    {stockOf(p) < 10 && <span className="pill warn">Hampir habis</span>}
+                  </td>
+                  <td className="r num">{rp(p.sold * data.price.mitra)}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 16 }}>
+                  Belum ada gerai mitra terdaftar di database.
                 </td>
-                <td>{p.type}</td>
-                <td>{p.zone}</td>
-                <td className="r num">{nf(p.sent)}</td>
-                <td className="r num">{nf(p.sold)}</td>
-                <td className="r num">
-                  {nf(stockOf(p))}{' '}
-                  {stockOf(p) < 10 && <span className="pill warn">Hampir habis</span>}
-                </td>
-                <td className="r num">{rp(p.sold * data.price.mitra)}</td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
       </div>
@@ -142,13 +167,15 @@ const TYPES = [
 ];
 const ZONES = ['Zona Selatan', 'Zona Pusat', 'Zona Utara', 'Zona Timur'];
 
-function AddPartnerForm({ data, setData, user }) {
+function AddPartnerForm({ data, setData, user, refreshData }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [msg, setMsg] = useState(null); // { text, kind: 'good' | 'bad' }
+  const [submitting, setSubmitting] = useState(false);
 
   const setField = (key) => (e) => setForm({ ...form, [key]: e.target.value });
 
-  const handleSubmit = (e) => {
+  // [INTEGRASI BACKEND: Menyimpan gerai mitra baru ke database PostgreSQL via POST /api/owner/partners]
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const name = form.name.trim();
     const pin = form.pin.trim();
@@ -163,41 +190,62 @@ function AddPartnerForm({ data, setData, user }) {
       return setMsg({ kind: 'bad', text: 'Pasokan awal harus bilangan bulat, boleh 0.' });
     }
 
-    const id = 'x' + Date.now().toString(36);
-    const partner = {
-      id,
-      name,
-      type: form.type,
-      zone: form.zone,
-      sent: 0,
-      sold: 0,
-      returned: 0,
-      pin,
-    };
-    const trip = { id: 'm' + Date.now().toString(36), p: id, qty, done: false };
-    const text = `Mitra baru: ${name}${qty ? `, pasokan awal ${qty} butir dijadwalkan` : ''}`;
+    setSubmitting(true);
+    setMsg(null);
+    try {
+      const res = await erpService.createPartner({
+        name,
+        type: form.type,
+        zone: form.zone,
+        pin,
+        initialQty: qty,
+      });
 
-    setData((d) =>
-      addLog(
-        {
-          ...d,
-          partners: [...d.partners, partner],
-          manifest: qty > 0 ? [...d.manifest, trip] : d.manifest,
-        },
-        'mitra',
-        text,
-        user.name
-      )
-    );
-    setForm(EMPTY_FORM);
-    setMsg({ kind: 'good', text: `${name} ditambahkan.` });
+      const created = res?.data?.partner || {
+        id: 'p_' + Date.now().toString(36),
+        name,
+        type: form.type,
+        zone: form.zone,
+        sent: 0,
+        sold: 0,
+        returned: 0,
+        pin,
+      };
+      const trip = res?.data?.manifest || {
+        id: 'm_' + Date.now().toString(36),
+        p: created.id,
+        qty,
+        done: false,
+      };
+      const text = `Mitra baru: ${name}${qty ? `, pasokan awal ${qty} butir dijadwalkan` : ''}`;
+
+      setData((d) =>
+        addLog(
+          {
+            ...d,
+            partners: [...d.partners, { ...created, sent: 0, sold: 0, returned: 0 }],
+            manifest: qty > 0 ? [...d.manifest, trip] : d.manifest,
+          },
+          'mitra',
+          text,
+          user.name
+        )
+      );
+      setForm(EMPTY_FORM);
+      setMsg({ kind: 'good', text: `${name} berhasil disimpan ke database PostgreSQL.` });
+      if (typeof refreshData === 'function') refreshData();
+    } catch (err) {
+      setMsg({ kind: 'bad', text: err.message || 'Gagal menyimpan mitra ke database.' });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
     <form className="panel" style={{ maxWidth: 640 }} onSubmit={handleSubmit} noValidate>
       <h2>Tambah mitra</h2>
       <p className="muted small" style={{ margin: '4px 0 12px' }}>
-        Mitra baru bisa dipilih saat reseller mendaftar akun.
+        Mitra baru disimpan ke database dan langsung bisa dipilih saat membuat akun mitra.
       </p>
       <div className="grid g2">
         <div className="field">
@@ -243,8 +291,8 @@ function AddPartnerForm({ data, setData, user }) {
         </div>
       </div>
       {msg && <div className={`msg ${msg.kind}`}>{msg.text}</div>}
-      <button type="submit" className="btn primary">
-        Simpan mitra
+      <button type="submit" className="btn primary" disabled={submitting}>
+        {submitting ? 'Menyimpan ke database...' : 'Simpan mitra'}
       </button>
     </form>
   );

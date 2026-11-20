@@ -1,5 +1,5 @@
-import { TODAY, dstr } from '../../../utils/formatters';
-import { addLog } from '../../../utils/erpHelpers';
+import { dstr } from '../../../utils/formatters';
+import erpService from '../../../api/erpService';
 
 // Kategori aset: [warna label, keterangan]
 const ASSET_CAT = {
@@ -10,36 +10,29 @@ const ASSET_CAT = {
 const CATS = Object.keys(ASSET_CAT);
 
 // Tab 3: Aset dapur
-export default function AsetDapur({ data, setData, notify, user }) {
+export default function AsetDapur({ data, notify, refreshData }) {
   // Ubah kategori satu aset setelah pemeriksaan
-  const setCondition = (id, cond) => {
-    const asset = data.assets.find((a) => a.id === id);
-    setData((d) =>
-      addLog(
-        {
-          ...d,
-          assets: d.assets.map((a) => (a.id === id ? { ...a, cond, scan: TODAY, flag: false } : a)),
-        },
-        'aset',
-        `${asset.name} dikategorikan ${cond}`,
-        user.name
-      )
-    );
-    notify(`${asset.name}: ${cond}`);
+  const setCondition = async (id, cond) => {
+    const asset = (data.assets || []).find((a) => a.id === id);
+    try {
+      await erpService.updateAsset(id, { condition: cond });
+      notify(`${asset?.name || id}: status kondisi ${cond} disimpan ke database`);
+      if (typeof refreshData === 'function') refreshData();
+    } catch (err) {
+      notify(err.message || 'Gagal mengubah kondisi aset di server');
+    }
   };
 
   // Setujui penghapusan aset yang tidak layak
-  const approveWriteoff = (id) => {
-    const asset = data.assets.find((a) => a.id === id);
-    setData((d) =>
-      addLog(
-        { ...d, assets: d.assets.map((a) => (a.id === id ? { ...a, flag: true } : a)) },
-        'aset',
-        `Penghapusan ${asset.name} disetujui`,
-        user.name
-      )
-    );
-    notify(`Penghapusan ${asset.name} disetujui`);
+  const approveWriteoff = async (id) => {
+    const asset = (data.assets || []).find((a) => a.id === id);
+    try {
+      await erpService.approveAssetWriteoff(id);
+      notify(`Penghapusan ${asset?.name || id} disetujui di database`);
+      if (typeof refreshData === 'function') refreshData();
+    } catch (err) {
+      notify(err.message || 'Gagal menyetujui penghapusan aset');
+    }
   };
 
   return (

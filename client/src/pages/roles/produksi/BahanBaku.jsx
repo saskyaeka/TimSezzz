@@ -1,27 +1,30 @@
 import { rp, nf2 } from '../../../utils/formatters';
-import { addLog } from '../../../utils/erpHelpers';
+import erpService from '../../../api/erpService';
 
 // Tab 1: Stok bahan baku
-export default function BahanBaku({ data, setData, notify, user }) {
+export default function BahanBaku({ data, notify, refreshData }) {
   const low = data.ingredients.filter((i) => i.stock <= i.rop);
 
-  // Terbitkan PO: bahan langsung diterima sebanyak 2x batas pesan ulang
-  const issuePo = (id) => {
+  // Terbitkan PO: buat PO di backend lalu terima untuk menambah stok secara permanen
+  const issuePo = async (id) => {
     const ing = data.ingredients.find((i) => i.id === id);
-    setData((d) =>
-      addLog(
-        {
-          ...d,
-          ingredients: d.ingredients.map((i) =>
-            i.id === id ? { ...i, stock: i.stock + i.rop * 2 } : i
-          ),
-        },
-        'bahan',
-        `PO ${ing.name} diterima, stok bertambah`,
-        user.name
-      )
-    );
-    notify(`PO ${ing.name} diterbitkan dan bahan diterima`);
+    if (!ing) return;
+    const qty = (Number(ing.rop) || 10) * 2;
+    try {
+      const poRes = await erpService.createPurchaseOrder({
+        ingredientId: id,
+        quantity: qty,
+        note: `Restok bahan baku ${ing.name}`,
+      });
+      const poId = poRes?.data?.purchaseOrder?.id;
+      if (poId) {
+        await erpService.receivePurchaseOrder(poId);
+      }
+      notify(`PO ${ing.name} (+${qty} ${ing.unit}) berhasil diproses ke database`);
+      if (typeof refreshData === 'function') refreshData();
+    } catch (err) {
+      notify(err.message || 'Gagal memproses PO di server');
+    }
   };
 
   return (

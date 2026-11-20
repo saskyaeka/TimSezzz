@@ -1,9 +1,10 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import Navbar from '../layout/Navbar';
 import Toast from '../components/Toast';
 import { ROLES, ACCESS, ROLE_HEADS, areaOf } from '../utils/roles';
-import { getInitialData } from '../api/erpService';
+// [INTEGRASI BACKEND: Import fetchRoleData untuk memuat data riil dari database PostgreSQL]
+import { getInitialData, fetchRoleData } from '../api/erpService';
 import { tabBadge } from '../utils/erpHelpers';
 import OwnerView from './roles/OwnerView';
 import ProduksiView from './roles/ProduksiView';
@@ -44,6 +45,34 @@ export default function DashboardPage() {
   const [data, setData] = useState(getInitialData);
   const [toast, setToast] = useState('');
   const closeToast = useCallback(() => setToast(''), []);
+
+  // [INTEGRASI BACKEND: Sinkronisasi data riil dari PostgreSQL ke dashboard]
+  const userRole = user?.role;
+  const refreshData = useCallback(async () => {
+    if (!userRole) return;
+    try {
+      const freshData = await fetchRoleData(userRole);
+      setData(freshData);
+    } catch (err) {
+      setToast(err.message || 'Gagal memuat data dari server.');
+    }
+  }, [userRole]);
+
+  useEffect(() => {
+    let ignore = false;
+    if (localStorage.getItem('token') && userRole) {
+      fetchRoleData(userRole)
+        .then((freshData) => {
+          if (!ignore) setData(freshData);
+        })
+        .catch((err) => {
+          if (!ignore) setToast(err.message || 'Gagal memuat data dari server.');
+        });
+    }
+    return () => {
+      ignore = true;
+    };
+  }, [userRole]);
 
   if (!localStorage.getItem('token') || !user || allowedRoles.length === 0) {
     return <Navigate to="/login" replace />;
@@ -102,6 +131,7 @@ export default function DashboardPage() {
             setData={setData}
             notify={setToast}
             user={user}
+            refreshData={refreshData}
             goTab={(i) => setTabs({ ...tabs, [activeRole]: i })}
           />
         </div>

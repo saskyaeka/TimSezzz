@@ -104,7 +104,18 @@ export default function PodForm({ onConfirm, coldAvailable, qty }) {
     if (qty > coldAvailable)
       return setMsg(`Cold storage hanya ${coldAvailable} butir. Muatan tidak cukup.`);
     stopStream(streamRef);
-    onConfirm({ photo, photoAt });
+
+    let latitude = null;
+    let longitude = null;
+    if (gps && gps.includes(',')) {
+      const parts = gps.split(',').map((s) => parseFloat(s.trim()));
+      if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+        latitude = parts[0];
+        longitude = parts[1];
+      }
+    }
+
+    onConfirm({ photo, photoAt, latitude, longitude });
   };
 
   return (

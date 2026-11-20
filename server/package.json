@@ -11,7 +11,9 @@
     "test:integration": "node --test tests/postgresIntegration.test.js",
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
-    "create:owner": "node src/scripts/createOwner.js"
+    "create:owner": "node src/scripts/createOwner.js",
+    "db:setup": "node src/scripts/setupDb.js",
+    "db:seed": "node src/scripts/seedDb.js"
   },
   "keywords": [],
   "author": "",

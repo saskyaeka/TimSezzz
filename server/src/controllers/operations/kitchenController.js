@@ -308,6 +308,7 @@ async function createProduction(req, res) {
       ingredientCost += needed * Number(ing.price);
     }
 
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['paolotory-batch-seq']);
     const { rows: dateRows } = await client.query(
       `SELECT CURRENT_DATE::text AS today,
               TO_CHAR(CURRENT_DATE, 'YYYYMMDD') AS date_code,

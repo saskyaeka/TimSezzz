@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { TODAY, dstr, nf } from '../../../utils/formatters';
+import { dstr, nf } from '../../../utils/formatters';
 import { stockOf } from '../../../utils/erpHelpers';
+import erpService from '../../../api/erpService';
 
 // Label status retur: [warna, teks]
 const STATUS = {
@@ -10,14 +11,14 @@ const STATUS = {
 };
 
 // Tab 3: Ajukan retur bakpau yang tidak terjual
-export default function ReturMitra({ data, setData, partner }) {
+export default function ReturMitra({ data, user, partner, refreshData }) {
   const [qty, setQty] = useState('');
   const [msg, setMsg] = useState(null); // { text, kind }
-  const mine = data.claims.filter((c) => c.p === partner.id);
-  const pending = mine.filter((c) => c.status === 'menunggu').reduce((a, c) => a + c.qty, 0);
+  const mine = (data.claims || []).filter((c) => (c.p === partner.id || c.partner_id === partner.id));
+  const pending = mine.filter((c) => c.status === 'menunggu').reduce((a, c) => a + Number(c.qty || 0), 0);
   const available = stockOf(partner) - pending;
 
-  const send = (e) => {
+  const send = async (e) => {
     e.preventDefault();
     const q = Number(qty);
     if (!Number.isInteger(q) || q < 1) {
@@ -29,10 +30,18 @@ export default function ReturMitra({ data, setData, partner }) {
         text: `Jumlah melebihi stok gerai yang belum diretur (${available} butir).`,
       });
     }
-    const claim = { id: 'c' + Date.now(), p: partner.id, qty: q, status: 'menunggu', date: TODAY };
-    setData((d) => ({ ...d, claims: [claim, ...d.claims] }));
-    setMsg({ kind: 'good', text: 'Retur terkirim. Menunggu konfirmasi pemilik.' });
-    setQty('');
+
+    try {
+      if (user?.role === 'partner') {
+        await erpService.createPartnerClaim({ quantity: q });
+      }
+
+      setMsg({ kind: 'good', text: 'Retur berhasil dikirim ke database. Menunggu konfirmasi pemilik.' });
+      setQty('');
+      if (typeof refreshData === 'function') refreshData();
+    } catch (err) {
+      setMsg({ kind: 'bad', text: err.message || 'Gagal mengirim retur ke server' });
+    }
   };
 
   return (

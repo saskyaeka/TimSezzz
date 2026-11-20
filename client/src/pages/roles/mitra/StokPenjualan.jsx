@@ -1,41 +1,52 @@
 import { useState } from 'react';
 import { TODAY, dstr, nf } from '../../../utils/formatters';
 import { addLog, stockOf } from '../../../utils/erpHelpers';
+import erpService from '../../../api/erpService';
 
 // Tab 1: Stok di gerai dan catat penjualan harian
-export default function StokPenjualan({ data, setData, user, partner, goTab }) {
+export default function StokPenjualan({ data, setData, user, partner, goTab, refreshData }) {
   const [qty, setQty] = useState('');
   const [msg, setMsg] = useState(null); // { text, kind }
   const stock = stockOf(partner);
-  const incoming = data.manifest
-    .filter((m) => m.p === partner.id && !m.done)
-    .reduce((a, m) => a + m.qty, 0);
+  const incoming = (data.manifest || data.manifests || [])
+    .filter((m) => (m.p === partner.id || m.partner_id === partner.id) && !m.done)
+    .reduce((a, m) => a + Number(m.qty || 0), 0);
 
-  const save = (e) => {
+  const save = async (e) => {
     e.preventDefault();
     const q = Number(qty);
     if (qty === '') return setMsg({ kind: 'bad', text: 'Isi jumlah butir yang terjual.' });
     if (!Number.isInteger(q)) return setMsg({ kind: 'bad', text: 'Jumlah harus bilangan bulat.' });
-    if (q < 0) return setMsg({ kind: 'bad', text: 'Jumlah tidak boleh negatif.' });
+    if (q <= 0) return setMsg({ kind: 'bad', text: 'Jumlah penjualan harus lebih dari 0.' });
     if (q > stock) {
       return setMsg({
         kind: 'bad',
         text: `Laporan ditolak: terjual ${q} butir melebihi stok ${stock} butir di gerai.`,
       });
     }
-    setData((d) =>
-      addLog(
-        {
-          ...d,
-          partners: d.partners.map((p) => (p.id === partner.id ? { ...p, sold: p.sold + q } : p)),
-        },
-        'jual',
-        `${partner.name} melaporkan ${q} butir terjual`,
-        user.name
-      )
-    );
-    setMsg({ kind: 'good', text: `Tersimpan. Sisa stok sekarang ${stock - q} butir.` });
-    setQty('');
+
+    try {
+      if (user.role === 'partner') {
+        await erpService.createPartnerSale(q);
+      }
+
+      setData((d) =>
+        addLog(
+          {
+            ...d,
+            partners: d.partners.map((p) => (p.id === partner.id ? { ...p, sold: p.sold + q } : p)),
+          },
+          'jual',
+          `${partner.name} melaporkan ${q} butir terjual (tersimpan di database)`,
+          user.name
+        )
+      );
+      setMsg({ kind: 'good', text: `Tersimpan di database. Sisa stok sekarang ${stock - q} butir.` });
+      setQty('');
+      if (typeof refreshData === 'function') refreshData();
+    } catch (err) {
+      setMsg({ kind: 'bad', text: err.message || 'Gagal menyimpan penjualan di server' });
+    }
   };
 
   return (

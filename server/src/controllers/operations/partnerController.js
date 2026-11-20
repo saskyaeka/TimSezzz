@@ -67,7 +67,7 @@ async function createClaim(req, res) {
     } catch {
       assert(false, 400, 'URL foto retur tidak valid.');
     }
-    assert(photo.protocol === 'https:', 400, 'Foto retur harus menggunakan URL HTTPS.');
+    assert(['https:', 'http:'].includes(photo.protocol), 400, 'Foto retur harus menggunakan URL HTTP atau HTTPS.');
   }
   const claim = await db.transaction(async (client) => {
     const partner = await getPartner(client, partnerId, { lock: true });
