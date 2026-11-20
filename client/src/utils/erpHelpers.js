@@ -1,11 +1,55 @@
 // Rumus turunan dari data dashboard.
 // Semua fungsi menerima `data` (isi getInitialData) sebagai parameter pertama.
 
-export const findPartner = (data, id) => (data?.partners || []).find((p) => p.id === id);
-export const findIngredient = (data, id) => (data?.ingredients || []).find((i) => (i.id || i.ingredient_id) === id);
+export const findPartner = (data, id) => {
+  if (!id) return null;
+  if (typeof id === 'object' && id.name) return id;
+  const fromList = (data?.partners || []).find((p) => p.id === id);
+  if (fromList) return fromList;
+
+  // Fallback dari manifes jika data partners belum dimuat terpisah
+  const manifests = data?.manifest || data?.manifests || [];
+  const fromManifest = manifests.find((m) => m.partner_id === id || m.p === id);
+  if (fromManifest && (fromManifest.partner_name || fromManifest.name)) {
+    return {
+      id,
+      name: fromManifest.partner_name || fromManifest.name || id,
+      type: fromManifest.type || 'Gerai',
+      zone: fromManifest.zone || 'Zona Pusat',
+      sent: 0,
+      sold: 0,
+      returned: 0,
+    };
+  }
+
+  // Fallback dari inventaris mitra
+  if (data?.partnerInventory && data.partnerInventory.partnerId === id) {
+    return {
+      id,
+      name: data.partnerInventory.name || 'Gerai Saya',
+      type: data.partnerInventory.type || 'Gerai',
+      zone: data.partnerInventory.zone || 'Zona Pusat',
+      sent: data.partnerInventory.sent || 0,
+      sold: data.partnerInventory.sold || 0,
+      returned: data.partnerInventory.returned || 0,
+    };
+  }
+
+  return { id, name: String(id), type: 'Gerai', zone: 'Zona Pusat', sent: 0, sold: 0, returned: 0 };
+};
+
+export const findIngredient = (data, id) =>
+  (data?.ingredients || []).find((i) => (i.id || i.ingredient_id) === id) || {
+    id,
+    name: id,
+    unit: 'g',
+    price: 0,
+    stock: 0,
+    rop: 0,
+  };
 
 // Sisa stok di satu mitra
-export const stockOf = (p) => (p?.sent || 0) - (p?.sold || 0) - (p?.returned || 0);
+export const stockOf = (p) => Math.max(0, (p?.sent || 0) - (p?.sold || 0) - (p?.returned || 0));
 
 // [INTEGRASI BACKEND: Membaca left_qty dari PostgreSQL agar tidak menghasilkan NaN]
 export const coldStock = (data) =>
@@ -45,14 +89,16 @@ export function hpp(data) {
 
 // Tagihan satu mitra: hanya bakpau terjual yang ditagih, retur tidak ditagih
 export function settle(data, p) {
-  const gross = p.sold * data.price.mitra;
+  const price = Number(data?.price?.mitra ?? 9000);
+  const gross = Number(p?.sold || 0) * price;
   return { gross, net: gross };
 }
 
 // Tambah satu catatan ke buku besar (terbaru di atas, maksimal 30 catatan).
 // Mengembalikan data baru, jadi dipakai di dalam setData((d) => addLog(d, ...)).
 export function addLog(data, kind, text, by = '') {
-  return { ...data, ledger: [{ t: new Date(), kind, text, by }, ...data.ledger].slice(0, 30) };
+  const currentLedger = Array.isArray(data?.ledger) ? data.ledger : [];
+  return { ...data, ledger: [{ t: new Date(), kind, text, by }, ...currentLedger].slice(0, 30) };
 }
 
 // Katalog produk kasir. cold = butir yang diambil dari cold storage, disc = diskon paket
@@ -69,12 +115,14 @@ export const POS_PRODUCTS = [
 ];
 
 // Harga produk kasir mengikuti harga kasir yang diatur pemilik, dibulatkan ke Rp100
-export const posPrice = (data, p) =>
-  Math.round((data.price.kasir * (p.cold || 1) * (1 - p.disc)) / 100) * 100;
+export const posPrice = (data, p) => {
+  const kasirPrice = Number(data?.price?.kasir ?? 12000);
+  return Math.round((kasirPrice * (p?.cold || 1) * (1 - (p?.disc || 0))) / 100) * 100;
+};
 
 // Total isi keranjang kasir
 export const cartTotal = (data) =>
-  Object.entries(data.pos.cart).reduce(
+  Object.entries(data?.pos?.cart || {}).reduce(
     (a, [id, q]) =>
       a +
       posPrice(
@@ -86,20 +134,43 @@ export const cartTotal = (data) =>
   );
 
 // Pemakaian bahan standar = takaran 1 resep x jumlah resep
-export const stdUse = (data, id, resep) => data.bom.items.find((x) => x[0] === id)[1] * resep;
+export const stdUse = (data, id, resep) => {
+  const items = data?.bom?.items;
+  if (Array.isArray(items)) {
+    const found = items.find((x) => (Array.isArray(x) ? x[0] === id : (x.ingredient_id || x.id) === id));
+    if (found) return (Array.isArray(found) ? found[1] : (found.quantity || found.qty || 0)) * resep;
+  }
+  if (data?.bom?.bom && typeof data.bom.bom === 'object') {
+    return Number(data.bom.bom[id] || 0) * resep;
+  }
+  return 0;
+};
 
 // Kurangi cold storage sebanyak n butir. Batch yang paling dekat kedaluwarsa diambil dulu.
 // Mengembalikan daftar batch baru.
 export function consumeCold(batches, n) {
   let rest = n;
   const taken = new Map();
-  for (const b of [...batches].sort((a, c) => a.exp - c.exp)) {
+  const sorted = [...(batches || [])].sort((a, c) => {
+    const timeA = a.exp instanceof Date ? a.exp.getTime() : new Date(a.exp_date || a.exp || 0).getTime();
+    const timeC = c.exp instanceof Date ? c.exp.getTime() : new Date(c.exp_date || c.exp || 0).getTime();
+    return timeA - timeC;
+  });
+
+  for (const b of sorted) {
     if (rest <= 0) break;
-    const take = Math.min(b.left, rest);
+    const available = Number(b.left_qty ?? b.left ?? b.qty ?? 0);
+    const take = Math.min(available, rest);
     taken.set(b.id, take);
     rest -= take;
   }
-  return batches.map((b) => (taken.has(b.id) ? { ...b, left: b.left - taken.get(b.id) } : b));
+
+  return (batches || []).map((b) => {
+    if (!taken.has(b.id)) return b;
+    const current = Number(b.left_qty ?? b.left ?? b.qty ?? 0);
+    const updated = Math.max(0, current - taken.get(b.id));
+    return { ...b, left: updated, left_qty: updated };
+  });
 }
 
 // Label status pesanan stok mitra: [warna, teks]
@@ -111,8 +182,8 @@ export const ORDER_STATUS = {
 
 // Jumlah retur dan pesanan yang menunggu keputusan pemilik
 export const pendingApprovals = (data) =>
-  data.claims.filter((c) => c.status === 'menunggu').length +
-  data.orders.filter((o) => o.status === 'menunggu').length;
+  (data?.claims || []).filter((c) => c.status === 'menunggu').length +
+  (data?.orders || []).filter((o) => o.status === 'menunggu').length;
 
 // Angka kecil di samping nama tab (0 = tidak ditampilkan)
 export const tabBadge = (data, role, i) =>

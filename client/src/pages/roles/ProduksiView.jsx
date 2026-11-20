@@ -4,8 +4,8 @@ import ProduksiSpk from './produksi/ProduksiSpk';
 import BatchKedaluwarsa from './produksi/BatchKedaluwarsa';
 import CatatanPengurangan from './produksi/CatatanPengurangan';
 
-export default function ProduksiView({ tab, data, setData, notify, user }) {
-  const actions = { data, setData, notify, user };
+export default function ProduksiView({ tab, data, setData, notify, user, refreshData }) {
+  const actions = { data, setData, notify, user, refreshData };
 
   if (tab === 0) return <BahanBaku {...actions} />;
   if (tab === 1) return <ProduksiSpk {...actions} />;

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import InputText from '../components/InputText';
 import PrimaryButton from '../components/PrimaryButton';
 import { registerSchema } from '../schemas/authSchema';
@@ -9,7 +9,7 @@ import { authService } from '../api/authService';
 
 export default function RegisterPage() {
   const [serverError, setServerError] = useState('');
-  const navigate = useNavigate();
+  const [successMsg, setSuccessMsg] = useState('');
   const {
     register,
     handleSubmit,
@@ -18,15 +18,18 @@ export default function RegisterPage() {
 
   const onSubmit = async (data) => {
     setServerError('');
+    setSuccessMsg('');
     try {
-      await authService.register({
+      const res = await authService.register({
         name: data.name,
         email: data.email,
         password: data.password,
       });
 
-      alert('Registrasi berhasil! Silakan masuk.');
-      navigate('/login');
+      setSuccessMsg(
+        res.message ||
+          'Pendaftaran berhasil! Akun Anda sedang menunggu persetujuan dan penautan gerai oleh pemilik usaha sebelum dapat digunakan.'
+      );
     } catch (err) {
       setServerError(err.message);
     }
@@ -42,6 +45,27 @@ export default function RegisterPage() {
           </div>
         </div>
         <h1>Daftar</h1>
+
+        {successMsg && (
+          <div
+            style={{
+              padding: '12px',
+              marginBottom: '15px',
+              backgroundColor: '#e8f5e9',
+              color: '#2e7d32',
+              borderRadius: '6px',
+              fontSize: '14px',
+              lineHeight: 1.5,
+            }}
+          >
+            {successMsg}
+            <div style={{ marginTop: '10px' }}>
+              <Link className="btn primary sm" to="/login" style={{ display: 'inline-block', textDecoration: 'none' }}>
+                Kembali ke Halaman Masuk
+              </Link>
+            </div>
+          </div>
+        )}
 
         {serverError && (
           <div

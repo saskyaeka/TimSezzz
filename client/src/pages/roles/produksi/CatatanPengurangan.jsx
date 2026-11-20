@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { diffTxt, fmtT, nf, nf2 } from '../../../utils/formatters';
-import { addLog } from '../../../utils/erpHelpers';
+import erpService from '../../../api/erpService';
 
 const REASONS = ['Tumpah / rusak', 'Kedaluwarsa', 'Selisih stock opname', 'Lainnya'];
 
 // Teks selisih pemakaian dari resep untuk satu catatan
 function varianceText(u) {
+  if (!u.items || !u.items.length) return '—';
   if (u.items[0] && u.items[0].std === null) return '—';
   const diffs = u.items
     .filter((i) => Math.abs(i.used - i.std) > 1e-9)
@@ -14,16 +15,17 @@ function varianceText(u) {
 }
 
 // Tab 4: Catatan pengurangan bahan baku dan pengurangan manual
-export default function CatatanPengurangan({ data, setData, user }) {
-  const [ingId, setIngId] = useState(data.ingredients[0].id);
+export default function CatatanPengurangan({ data, refreshData }) {
+  const [ingId, setIngId] = useState(data.ingredients[0]?.id || '');
   const [qty, setQty] = useState('');
   const [reason, setReason] = useState(REASONS[0]);
   const [note, setNote] = useState('');
   const [msg, setMsg] = useState(null); // { text, kind }
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
     const ing = data.ingredients.find((i) => i.id === ingId);
+    if (!ing) return setMsg({ kind: 'bad', text: 'Pilih bahan baku terlebih dahulu.' });
     const q = Number(qty);
 
     if (!(q > 0)) return setMsg({ kind: 'bad', text: 'Isi jumlah yang lebih dari 0.' });
@@ -34,36 +36,24 @@ export default function CatatanPengurangan({ data, setData, user }) {
       });
     }
 
-    const left = +(ing.stock - q).toFixed(3);
-    setData((d) =>
-      addLog(
-        {
-          ...d,
-          ingredients: d.ingredients.map((i) => (i.id === ingId ? { ...i, stock: left } : i)),
-          usage: [
-            {
-              t: new Date(),
-              mode: 'manual',
-              qty: null,
-              reason,
-              by: user.name,
-              note: note.trim(),
-              items: [{ id: ing.id, name: ing.name, unit: ing.unit, used: q, std: null }],
-            },
-            ...d.usage,
-          ],
-        },
-        'bahan',
-        `${ing.name} dikurangi ${nf2(q)} ${ing.unit} (${reason})`,
-        user.name
-      )
-    );
-    setMsg({
-      kind: 'good',
-      text: `${ing.name} dikurangi ${nf2(q)} ${ing.unit}. Stok sekarang ${nf2(left)} ${ing.unit}.`,
-    });
-    setQty('');
-    setNote('');
+    try {
+      await erpService.createIngredientAdjustment({
+        ingredientId: ingId,
+        quantity: q,
+        reason,
+        note: note.trim() || undefined,
+      });
+
+      setMsg({
+        kind: 'good',
+        text: `${ing.name} dikurangi ${nf2(q)} ${ing.unit} (${reason}). Tercatat di database.`,
+      });
+      setQty('');
+      setNote('');
+      if (typeof refreshData === 'function') refreshData();
+    } catch (err) {
+      setMsg({ kind: 'bad', text: err.message || 'Gagal menyimpan penyesuaian di server' });
+    }
   };
 
   return (

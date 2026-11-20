@@ -1,6 +1,6 @@
 // [INTEGRASI BACKEND: Menghubungkan client ke REST API backend PostgreSQL]
 import { apiClient } from './apiClient';
-import { TODAY, addDays, batchNo } from '../utils/formatters';
+import { TODAY, addDays, batchNo, toDate } from '../utils/formatters';
 import { findIngredient, stdUse } from '../utils/erpHelpers';
 
 const withQuery = (path, params = {}) => {
@@ -13,6 +13,96 @@ const withQuery = (path, params = {}) => {
   const qs = search.toString();
   return qs ? `${path}?${qs}` : path;
 };
+
+// Helper mapper entitas agar seragam di seluruh UI
+export const mapBatch = (b) => {
+  const made = toDate(b.made_date || b.made) || new Date();
+  const exp = toDate(b.exp_date || b.exp) || addDays(made, 30);
+  const qty = Number(b.qty ?? 0);
+  const left = Number(b.left_qty ?? b.left ?? qty);
+  return {
+    ...b,
+    id: b.id,
+    made_date: b.made_date || made.toISOString().split('T')[0],
+    exp_date: b.exp_date || exp.toISOString().split('T')[0],
+    made,
+    exp,
+    qty,
+    left_qty: left,
+    left,
+    hpp: Number(b.hpp ?? b.hpp_per_unit ?? 0),
+  };
+};
+
+export const mapOrder = (o) => ({
+  ...o,
+  id: o.id,
+  p: o.partner_id || o.p,
+  partner_id: o.partner_id || o.p,
+  qty: Number(o.qty ?? 0),
+  date: toDate(o.order_date || o.date) || new Date(),
+  order_date: o.order_date,
+  status: o.status || 'menunggu',
+  note: o.note || '',
+});
+
+export const mapClaim = (c) => ({
+  ...c,
+  id: c.id,
+  p: c.partner_id || c.p,
+  partner_id: c.partner_id || c.p,
+  qty: Number(c.qty ?? 0),
+  date: toDate(c.claim_date || c.date) || new Date(),
+  claim_date: c.claim_date,
+  status: c.status || 'menunggu',
+  photoUrl: c.photo_url || c.photoUrl || '',
+  photo: c.photo_url || c.photoUrl || '',
+});
+
+export const mapManifest = (m) => ({
+  ...m,
+  id: m.id,
+  p: m.partner_id || m.p,
+  partner_id: m.partner_id || m.p,
+  partner_name: m.partner_name || m.name || '',
+  type: m.type || 'Gerai',
+  zone: m.zone || 'Zona Pusat',
+  qty: Number(m.qty ?? m.quantity ?? 0),
+  done: m.status === 'terkirim' || Boolean(m.is_done ?? m.done),
+  is_done: m.status === 'terkirim' || Boolean(m.is_done ?? m.done),
+  photo: m.photo_url || m.photo || '',
+  photo_url: m.photo_url || m.photo || '',
+});
+
+export const mapAsset = (a) => ({
+  ...a,
+  id: a.id,
+  name: a.name,
+  loc: a.location || a.loc || '',
+  location: a.location || a.loc || '',
+  cond: a.condition || a.cond || 'Baik',
+  condition: a.condition || a.cond || 'Baik',
+  scan: toDate(a.last_inspected_at || a.scan) || new Date(),
+  flag: Boolean(a.writeoff_approved ?? a.flag),
+  writeoff_approved: Boolean(a.writeoff_approved ?? a.flag),
+});
+
+export const mapProductionToUsage = (pr) => ({
+  t: toDate(pr.created_at) || new Date(),
+  mode: pr.usage_mode || 'auto',
+  resep: pr.recipe_count,
+  qty: pr.yield_qty,
+  batch: pr.batch_id,
+  by: pr.created_by || 'Dapur',
+  note: pr.note || '',
+  items: (pr.items || []).map((it) => ({
+    id: it.ingredientId,
+    name: it.ingredientName || it.ingredientId,
+    unit: it.unit || 'g',
+    used: Number(it.quantityUsed || 0),
+    std: Number(it.standardQuantity || 0),
+  })),
+});
 
 function seedUsage(data, days, mode, resep, note, tweak) {
   const made = addDays(TODAY, -days);
@@ -87,6 +177,13 @@ export function getInitialData() {
 // [INTEGRASI BACKEND: Tarik & petakan data dari database PostgreSQL sesuai peran pengguna]
 export async function fetchRoleData(role) {
   const base = getInitialData();
+  let currentUser = null;
+  try {
+    const rawUser = localStorage.getItem('user');
+    if (rawUser) currentUser = JSON.parse(rawUser);
+  } catch {
+    // Abaikan jika parsing gagal
+  }
 
   if (role === 'owner') {
     const [
@@ -102,6 +199,9 @@ export async function fetchRoleData(role) {
       batchesRes,
       recipeRes,
       logsRes,
+      posProdRes,
+      poRes,
+      prodRes,
     ] = await Promise.all([
       apiClient('/owner/dashboard').catch(() => ({ data: null })),
       apiClient('/owner/partners').catch(() => ({ data: { partners: [] } })),
@@ -115,26 +215,30 @@ export async function fetchRoleData(role) {
       apiClient('/kitchen/batches').catch(() => ({ data: { batches: [] } })),
       apiClient('/kitchen/recipe').catch(() => ({ data: null })),
       apiClient('/owner/audit-logs').catch(() => ({ data: { auditLogs: [] } })),
+      apiClient('/pos/products').catch(() => ({ data: { products: [] } })),
+      apiClient('/kitchen/purchase-orders').catch(() => ({ data: { purchaseOrders: [] } })),
+      apiClient('/kitchen/production').catch(() => ({ data: { productions: [] } })),
     ]);
 
     const rawPrices = pricesRes?.data?.prices || pricesRes?.data || {};
     const rawRecipe = recipeRes?.data?.recipe || recipeRes?.data || {};
     const bomMap = {};
+    const bomItemsList = [];
     if (Array.isArray(rawRecipe.items)) {
       rawRecipe.items.forEach((item) => {
-        bomMap[item.ingredient_id || item.id] = Number(item.qty_per_recipe ?? item.qty ?? item.quantity ?? 0);
+        const id = item.ingredient_id || item.id;
+        const qty = Number(item.qty_per_recipe ?? item.qty ?? item.quantity ?? 0);
+        bomMap[id] = qty;
+        bomItemsList.push([id, qty]);
       });
     } else if (rawRecipe.bom && typeof rawRecipe.bom === 'object') {
       Object.assign(bomMap, rawRecipe.bom);
+      Object.entries(rawRecipe.bom).forEach(([id, qty]) => {
+        bomItemsList.push([id, Number(qty)]);
+      });
     }
 
-    const mappedManifests = (manifestsRes?.data?.manifests || []).map((m) => ({
-      ...m,
-      p: m.partner_id ?? m.p,
-      qty: Number(m.qty ?? m.quantity ?? 0),
-      done: m.status === 'terkirim' || Boolean(m.is_done ?? m.done),
-    }));
-
+    const mappedManifests = (manifestsRes?.data?.manifests || []).map(mapManifest);
     const mappedPartners = (partnersRes?.data?.partners || []).map((p) => ({
       ...p,
       sent: Number(p.sent ?? 0),
@@ -149,21 +253,10 @@ export async function fetchRoleData(role) {
       price: Number(ing.price ?? ing.unit_price ?? 0),
     }));
 
-    const mappedBatches = (batchesRes?.data?.batches || []).map((b) => ({
-      ...b,
-      qty: Number(b.qty ?? 0),
-      left_qty: Number(b.left_qty ?? b.left ?? b.qty ?? 0),
-      left: Number(b.left_qty ?? b.left ?? b.qty ?? 0),
-      hpp: Number(b.hpp ?? b.unit_hpp ?? 0),
-    }));
-
-    const mappedAssets = (assetsRes?.data?.assets || []).map((a) => ({
-      ...a,
-      loc: a.location || a.loc,
-      cond: a.condition || a.cond,
-      scan: a.last_inspected_at ? new Date(a.last_inspected_at) : (a.scan || TODAY),
-      flag: Boolean(a.writeoff_approved ?? a.flag),
-    }));
+    const mappedBatches = (batchesRes?.data?.batches || []).map(mapBatch);
+    const mappedAssets = (assetsRes?.data?.assets || []).map(mapAsset);
+    const mappedOrders = (ordersRes?.data?.orders || []).map(mapOrder);
+    const mappedClaims = (claimsRes?.data?.claims || []).map(mapClaim);
 
     const mappedUsers = (usersRes?.data?.users || []).map((u) => ({
       ...u,
@@ -172,10 +265,15 @@ export async function fetchRoleData(role) {
 
     const rawLogs = logsRes?.data?.auditLogs || logsRes?.data?.logs || [];
     const mappedLedger = rawLogs.map((log) => ({
-      t: log.created_at ? new Date(log.created_at) : new Date(),
+      t: toDate(log.created_at) || new Date(),
       text: log.detail || log.description || log.action || 'Aktivitas sistem',
       by: log.actor_email || log.actor_name || '',
     }));
+
+    const rawProductions = prodRes?.data?.productions || [];
+    const mappedUsage = rawProductions.length
+      ? rawProductions.map(mapProductionToUsage)
+      : base.usage;
 
     const dash = dashRes?.data || {};
 
@@ -194,17 +292,27 @@ export async function fetchRoleData(role) {
         units: Number(dash?.pos?.units ?? dash?.posUnits ?? 0),
       },
       assets: mappedAssets,
-      orders: ordersRes?.data?.orders || [],
-      claims: claimsRes?.data?.claims || [],
+      orders: mappedOrders,
+      claims: mappedClaims,
       manifests: mappedManifests,
       manifest: mappedManifests,
       ingredients: mappedIngredients,
       batches: mappedBatches,
+      purchaseOrders: poRes?.data?.purchaseOrders || [],
+      productions: rawProductions,
+      usage: mappedUsage,
       recipe: {
         yield: Number(rawRecipe.yield ?? rawRecipe.yield_qty ?? 60),
         opex: Number(rawRecipe.opex ?? rawRecipe.opex_per_recipe ?? 45000),
         bom: bomMap,
       },
+      bom: {
+        ...base.bom,
+        yield: Number(rawRecipe.yield ?? rawRecipe.yield_qty ?? 60),
+        opex: Number(rawRecipe.opex ?? rawRecipe.opex_per_recipe ?? 45000),
+        items: bomItemsList.length ? bomItemsList : base.bom.items,
+      },
+      posProducts: posProdRes?.data?.products || [],
       ledger: mappedLedger.length ? mappedLedger : base.ledger,
     };
   }
@@ -219,17 +327,52 @@ export async function fetchRoleData(role) {
       apiClient('/kitchen/movements').catch(() => ({ data: { movements: [] } })),
     ]);
 
+    const rawRecipe = recipeRes?.data?.recipe || {};
+    const bomMap = {};
+    const bomItemsList = [];
+    if (Array.isArray(rawRecipe.items)) {
+      rawRecipe.items.forEach((item) => {
+        const id = item.ingredient_id || item.id;
+        const qty = Number(item.quantity ?? item.qty ?? 0);
+        bomMap[id] = qty;
+        bomItemsList.push([id, qty]);
+      });
+    }
+
+    const mappedIngredients = (ingRes?.data?.ingredients || []).map((ing) => ({
+      ...ing,
+      stock: Number(ing.stock ?? 0),
+      rop: Number(ing.rop ?? ing.reorder_point ?? 0),
+      price: Number(ing.price ?? ing.unit_price ?? 0),
+    }));
+
+    const rawProductions = prodRes?.data?.productions || [];
+    const mappedUsage = rawProductions.length
+      ? rawProductions.map(mapProductionToUsage)
+      : base.usage;
+
     return {
       ...base,
-      ingredients: ingRes?.data?.ingredients || [],
-      recipe: recipeRes?.data?.recipe || base.recipe,
-      batches: batchesRes?.data?.batches || [],
+      ingredients: mappedIngredients,
+      recipe: {
+        yield: Number(rawRecipe.yield ?? 60),
+        opex: Number(rawRecipe.opex ?? 45000),
+        bom: bomMap,
+      },
+      bom: {
+        ...base.bom,
+        yield: Number(rawRecipe.yield ?? 60),
+        opex: Number(rawRecipe.opex ?? 45000),
+        items: bomItemsList.length ? bomItemsList : base.bom.items,
+      },
+      batches: (batchesRes?.data?.batches || []).map(mapBatch),
       purchaseOrders: poRes?.data?.purchaseOrders || [],
-      productions: prodRes?.data?.productions || [],
+      productions: rawProductions,
+      usage: mappedUsage,
       ledger: (movRes?.data?.movements || []).map((m) => ({
-        t: m.created_at ? new Date(m.created_at) : new Date(),
-        text: m.reason || m.notes || m.movement_type || 'Mutasi stok',
-        by: m.actor_email || '',
+        t: toDate(m.created_at) || new Date(),
+        text: `${m.ingredient_name || m.ingredient_id}: ${m.quantity_delta > 0 ? '+' : ''}${m.quantity_delta} ${m.unit || ''} (${m.reason || 'Mutasi'})`,
+        by: m.created_by || '',
       })),
     };
   }
@@ -241,17 +384,24 @@ export async function fetchRoleData(role) {
     ]);
 
     let sales = [];
-    if (shiftRes?.data?.shift?.id) {
-      const salesRes = await apiClient(`/pos/shifts/${shiftRes.data.shift.id}/sales`).catch(() => ({
+    const activeShift = shiftRes?.data?.shift || null;
+    if (activeShift?.id) {
+      const salesRes = await apiClient(`/pos/shifts/${activeShift.id}/sales`).catch(() => ({
         data: { sales: [] },
       }));
       sales = salesRes?.data?.sales || [];
     }
 
+    const posProducts = prodRes?.data?.products || [];
     return {
       ...base,
-      posProducts: prodRes?.data?.products || [],
-      shift: shiftRes?.data?.shift || null,
+      posProducts,
+      shift: activeShift,
+      pos: {
+        ...base.pos,
+        shift: activeShift ? { open: Number(activeShift.opening_cash || 0), ...activeShift } : null,
+        sales,
+      },
       sales,
     };
   }
@@ -261,15 +411,33 @@ export async function fetchRoleData(role) {
       data: { manifests: [] },
     }));
 
+    const rawManifests = manifestsRes?.data?.manifests || [];
+    const mappedManifests = rawManifests.map(mapManifest);
+
+    // Kumpulkan info gerai dari manifes agar KurirView tidak crash saat filter zona
+    const courierPartners = [];
+    const seenPartnerIds = new Set();
+    for (const m of mappedManifests) {
+      const pId = m.partner_id || m.p;
+      if (pId && !seenPartnerIds.has(pId)) {
+        seenPartnerIds.add(pId);
+        courierPartners.push({
+          id: pId,
+          name: m.partner_name || pId,
+          type: m.type || 'Gerai',
+          zone: m.zone || 'Zona Pusat',
+          sent: 0,
+          sold: 0,
+          returned: 0,
+        });
+      }
+    }
+
     return {
       ...base,
-      manifests: manifestsRes?.data?.manifests || [],
-      manifest: (manifestsRes?.data?.manifests || []).map((m) => ({
-        ...m,
-        p: m.partner_id ?? m.p,
-        qty: Number(m.qty ?? m.quantity ?? 0),
-        done: m.status === 'terkirim' || Boolean(m.is_done ?? m.done),
-      })),
+      partners: courierPartners,
+      manifests: mappedManifests,
+      manifest: mappedManifests,
     };
   }
 
@@ -282,13 +450,26 @@ export async function fetchRoleData(role) {
       apiClient('/partner/settlement').catch(() => ({ data: null })),
     ]);
 
+    const inv = invRes?.data?.inventory || {};
+    const partnerId = inv.partnerId || currentUser?.partnerId || 'p1';
+    const partnerObj = {
+      id: partnerId,
+      name: inv.partnerName || inv.name || currentUser?.name || 'Gerai Saya',
+      type: inv.type || 'Gerai Titip-Jual',
+      zone: inv.zone || 'Zona Pusat',
+      sent: Number(inv.sent || 0),
+      sold: Number(inv.sold || 0),
+      returned: Number(inv.returned || 0),
+    };
+
     return {
       ...base,
-      partnerInventory: invRes?.data || null,
+      partners: [partnerObj],
+      partnerInventory: inv,
       sales: salesRes?.data?.sales || [],
-      orders: ordersRes?.data?.orders || [],
-      claims: claimsRes?.data?.claims || [],
-      settlement: setRes?.data || null,
+      orders: (ordersRes?.data?.orders || []).map(mapOrder),
+      claims: (claimsRes?.data?.claims || []).map(mapClaim),
+      settlement: setRes?.data?.settlement || setRes?.data || null,
     };
   }
 

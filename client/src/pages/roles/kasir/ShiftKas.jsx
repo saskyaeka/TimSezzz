@@ -1,11 +1,15 @@
 import { useState } from 'react';
 import { rp } from '../../../utils/formatters';
 import { addLog } from '../../../utils/erpHelpers';
+import erpService from '../../../api/erpService';
 
 // Tab 2: Shift dan kas (tutup shift dengan setoran buta)
-export default function ShiftKas({ data, setData, notify, user, goTab }) {
+export default function ShiftKas({ data, setData, notify, user, goTab, refreshData }) {
   const [counted, setCounted] = useState('');
-  const { shift, sales, lastClose } = data.pos;
+  const pos = data?.pos || {};
+  const shift = pos.shift || data?.shift;
+  const sales = pos.sales || data?.sales || [];
+  const lastClose = pos.lastClose;
 
   if (!shift && !lastClose) {
     return <div className="empty">Belum ada shift. Buka shift dari tab Kasir.</div>;
@@ -42,28 +46,38 @@ export default function ShiftKas({ data, setData, notify, user, goTab }) {
     );
   }
 
-  const cash = sales.filter((s) => s.pay === 'tunai').reduce((a, s) => a + s.total, 0);
-  const qris = sales.filter((s) => s.pay === 'qris').reduce((a, s) => a + s.total, 0);
+  const cash = sales.filter((s) => s.payment_method === 'tunai' || s.pay === 'tunai').reduce((a, s) => a + Number(s.total || 0), 0);
+  const qris = sales.filter((s) => s.payment_method === 'qris' || s.pay === 'qris').reduce((a, s) => a + Number(s.total || 0), 0);
 
-  const closeShift = () => {
+  const closeShift = async () => {
     if (counted === '' || !(Number(counted) >= 0)) {
       return notify('Isi jumlah uang di laci dulu');
     }
     const value = Number(counted);
-    const expected = shift.open + cash;
-    const diff = value - expected;
-    setData((d) =>
-      addLog(
-        {
-          ...d,
-          pos: { ...d.pos, lastClose: { expected, counted: value, diff }, shift: null, cart: {} },
-        },
-        'kas',
-        `Shift ditutup, selisih ${rp(diff)}`,
-        user.name
-      )
-    );
-    setCounted('');
+    try {
+      const res = await erpService.closeShift(value);
+      const closed = res?.data?.shift || {};
+      const expected = Number(closed.expected_cash ?? (shift.open + cash));
+      const diff = Number(closed.cash_difference ?? (value - expected));
+
+      setData((d) =>
+        addLog(
+          {
+            ...d,
+            pos: { ...d.pos, lastClose: { expected, counted: value, diff }, shift: null, cart: {} },
+            shift: null,
+          },
+          'kas',
+          `Shift ditutup, selisih ${rp(diff)} (disimpan di database)`,
+          user.name
+        )
+      );
+      setCounted('');
+      notify('Shift berhasil ditutup di database.');
+      if (typeof refreshData === 'function') refreshData();
+    } catch (err) {
+      notify(err.message || 'Gagal menutup shift di server');
+    }
   };
 
   return (

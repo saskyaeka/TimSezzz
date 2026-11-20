@@ -8,30 +8,38 @@ import {
   consumeCold,
   posPrice,
 } from '../../../utils/erpHelpers';
+import erpService from '../../../api/erpService';
 
 // Tab 1: Kasir (buka shift, pilih produk, bayar)
-export default function KasirPos({ data, setData, user }) {
+export default function KasirPos({ data, setData, user, refreshData }) {
   const [openCash, setOpenCash] = useState('300000');
   const [recv, setRecv] = useState('');
   const [msg, setMsg] = useState(null); // { text, kind }
   const { pos } = data;
+  const activeShift = pos?.shift || data?.shift;
 
   const updatePos = (change) => setData((d) => ({ ...d, pos: { ...d.pos, ...change(d.pos) } }));
 
-  const openShift = () => {
+  const openShift = async () => {
     const cash = Number(openCash);
     if (cash < 0) return;
-    setData((d) =>
-      addLog(
-        { ...d, pos: { ...d.pos, shift: { open: cash }, sales: [] } },
-        'kas',
-        `Shift dibuka dengan modal ${rp(cash)}`,
-        user.name
-      )
-    );
+    try {
+      await erpService.openShift(cash);
+      setData((d) =>
+        addLog(
+          { ...d, pos: { ...d.pos, shift: { open: cash }, sales: [] } },
+          'kas',
+          `Shift dibuka dengan modal ${rp(cash)}`,
+          user.name
+        )
+      );
+      if (typeof refreshData === 'function') refreshData();
+    } catch (err) {
+      setMsg({ kind: 'bad', text: err.message || 'Gagal membuka shift di database' });
+    }
   };
 
-  if (!pos.shift) {
+  if (!activeShift) {
     return (
       <div className="panel" style={{ maxWidth: 460 }}>
         <h2>Buka shift dulu</h2>
@@ -46,6 +54,7 @@ export default function KasirPos({ data, setData, user }) {
             onChange={(e) => setOpenCash(e.target.value)}
           />
         </div>
+        {msg && <div className={`msg ${msg.kind}`}>{msg.text}</div>}
         <button type="button" className="btn primary" onClick={openShift}>
           Buka shift
         </button>
@@ -54,7 +63,7 @@ export default function KasirPos({ data, setData, user }) {
   }
 
   const total = cartTotal(data);
-  const items = Object.entries(pos.cart);
+  const items = Object.entries(pos.cart || {});
   const coldNeed = items.reduce(
     (a, [id, q]) => a + POS_PRODUCTS.find((p) => p.id === id).cold * q,
     0
@@ -81,7 +90,10 @@ export default function KasirPos({ data, setData, user }) {
     setMsg(null);
   };
 
-  const checkout = () => {
+  const checkout = async () => {
+    if (!items.length) {
+      return setMsg({ kind: 'bad', text: 'Pilih minimal satu produk untuk checkout.' });
+    }
     if (coldNeed > cold) {
       return setMsg({
         kind: 'bad',
@@ -91,30 +103,43 @@ export default function KasirPos({ data, setData, user }) {
     if (pos.pay === 'tunai' && !(received >= total)) {
       return setMsg({ kind: 'bad', text: 'Uang diterima kurang dari total.' });
     }
-    const units = items.reduce(
-      (a, [id, q]) => a + (POS_PRODUCTS.find((p) => p.id === id).cold || 1) * q,
-      0
-    );
-    setData((d) =>
-      addLog(
-        {
-          ...d,
-          batches: consumeCold(d.batches, coldNeed),
-          pos: {
-            ...d.pos,
-            sales: [...d.pos.sales, { total, pay: d.pos.pay }],
-            revenue: d.pos.revenue + total,
-            units: d.pos.units + units,
-            cart: {},
+
+    try {
+      const apiItems = items.map(([id, q]) => ({ productId: id, quantity: q }));
+      await erpService.checkoutPos({
+        items: apiItems,
+        paymentMethod: pos.pay || 'tunai',
+        receivedAmount: pos.pay === 'tunai' ? received : undefined,
+      });
+
+      const units = items.reduce(
+        (a, [id, q]) => a + (POS_PRODUCTS.find((p) => p.id === id).cold || 1) * q,
+        0
+      );
+      setData((d) =>
+        addLog(
+          {
+            ...d,
+            batches: consumeCold(d.batches, coldNeed),
+            pos: {
+              ...d.pos,
+              sales: [...(d.pos.sales || []), { total, pay: d.pos.pay }],
+              revenue: (d.pos.revenue || 0) + total,
+              units: (d.pos.units || 0) + units,
+              cart: {},
+            },
           },
-        },
-        'pos',
-        `Penjualan kasir ${rp(total)} (${pos.pay})`,
-        user.name
-      )
-    );
-    setRecv('');
-    setMsg({ kind: 'good', text: 'Pembayaran tercatat. Struk siap dicetak.' });
+          'pos',
+          `Penjualan kasir ${rp(total)} (${pos.pay || 'tunai'}) tersimpan di database`,
+          user.name
+        )
+      );
+      setRecv('');
+      setMsg({ kind: 'good', text: 'Pembayaran berhasil disimpan di database. Struk siap dicetak.' });
+      if (typeof refreshData === 'function') refreshData();
+    } catch (err) {
+      setMsg({ kind: 'bad', text: err.message || 'Gagal menyimpan transaksi kasir' });
+    }
   };
 
   return (

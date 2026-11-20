@@ -2,8 +2,8 @@ import { ROLES } from '../../utils/roles';
 import KasirPos from './kasir/KasirPos';
 import ShiftKas from './kasir/ShiftKas';
 
-export default function KasirView({ tab, data, setData, notify, user, goTab }) {
-  const actions = { data, setData, notify, user, goTab };
+export default function KasirView({ tab, data, setData, notify, user, goTab, refreshData }) {
+  const actions = { data, setData, notify, user, goTab, refreshData };
 
   if (tab === 0) return <KasirPos {...actions} />;
   if (tab === 1) return <ShiftKas {...actions} />;

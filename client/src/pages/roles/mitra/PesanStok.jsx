@@ -1,39 +1,37 @@
 import { useState } from 'react';
-import { TODAY, dstr, nf } from '../../../utils/formatters';
-import { ORDER_STATUS, addLog, stockOf } from '../../../utils/erpHelpers';
+import { dstr, nf } from '../../../utils/formatters';
+import { ORDER_STATUS, stockOf } from '../../../utils/erpHelpers';
+import erpService from '../../../api/erpService';
 
 // Tab 2: Pesan stok ke pemilik
-export default function PesanStok({ data, setData, user, partner }) {
+export default function PesanStok({ data, user, partner, refreshData }) {
   const [qty, setQty] = useState('');
   const [note, setNote] = useState('');
   const [msg, setMsg] = useState(null); // { text, kind }
-  const mine = data.orders.filter((o) => o.p === partner.id);
+  const mine = (data.orders || []).filter((o) => (o.p === partner.id || o.partner_id === partner.id));
 
-  const send = (e) => {
+  const send = async (e) => {
     e.preventDefault();
     const q = Number(qty);
     if (!Number.isInteger(q) || q < 1) {
       return setMsg({ kind: 'bad', text: 'Isi jumlah pesanan (bilangan bulat, minimal 1).' });
     }
-    const order = {
-      id: 'o' + Date.now().toString(36),
-      p: partner.id,
-      qty: q,
-      note: note.trim(),
-      status: 'menunggu',
-      date: TODAY,
-    };
-    setData((d) =>
-      addLog(
-        { ...d, orders: [order, ...d.orders] },
-        'pesanan',
-        `${partner.name} memesan ${q} butir`,
-        user.name
-      )
-    );
-    setMsg({ kind: 'good', text: 'Pesanan terkirim. Menunggu persetujuan pemilik.' });
-    setQty('');
-    setNote('');
+
+    try {
+      if (user.role === 'partner') {
+        await erpService.createPartnerOrder({
+          quantity: q,
+          note: note.trim() || undefined,
+        });
+      }
+
+      setMsg({ kind: 'good', text: 'Pesanan berhasil dikirim ke database. Menunggu persetujuan pemilik.' });
+      setQty('');
+      setNote('');
+      if (typeof refreshData === 'function') refreshData();
+    } catch (err) {
+      setMsg({ kind: 'bad', text: err.message || 'Gagal mengirim pesanan ke server' });
+    }
   };
 
   return (
