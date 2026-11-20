@@ -65,6 +65,10 @@ app.use((error, req, res, next) => {
 });
 
 const PORT = Number(process.env.PORT) || 5001;
-app.listen(PORT, () => {
-  console.log(`Server aktif di http://localhost:${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Server aktif di http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;

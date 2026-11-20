@@ -29,7 +29,7 @@ async function confirmDelivery(req, res) {
   } catch {
     assert(false, 400, 'URL foto bukti tidak valid.');
   }
-  assert(photo.protocol === 'https:', 400, 'Foto bukti harus menggunakan URL HTTPS.');
+  assert(['https:', 'http:'].includes(photo.protocol), 400, 'Foto bukti harus menggunakan URL HTTP atau HTTPS.');
   const latitude = req.body?.latitude === undefined ? null : decimal(req.body.latitude, 'Latitude', { min: -90, max: 90 });
   const longitude = req.body?.longitude === undefined ? null : decimal(req.body.longitude, 'Longitude', { min: -180, max: 180 });
   assert((latitude === null) === (longitude === null), 400, 'Latitude dan longitude harus dikirim berpasangan.');
