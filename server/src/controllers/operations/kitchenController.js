@@ -1,7 +1,7 @@
 const db = require('../../config/db');
 const { assert } = require('../../utils/httpError');
 const { date, decimal, enumValue, integer, pagination, text } = require('../../utils/operationsValidation');
-const { ID, audit, availableCold, getAvailableBatches, readSettings, setSetting } = require('./shared');
+const { ID, audit, availableCold, getAvailableBatches, getAllBatches, readSettings, setSetting } = require('./shared');
 
 async function listIngredients(req, res) {
   const { limit, offset } = pagination(req.query);
@@ -141,8 +141,204 @@ async function updateRecipe(req, res) {
   return getRecipe(req, res);
 }
 
+async function listRecipes(req, res) {
+  const { rows: recipeRows } = await db.query(
+    `SELECT r.id, r.name, r.yield, r.opex, r.is_active, r.created_at, r.updated_at,
+            COALESCE(
+              json_agg(
+                json_build_object(
+                  'ingredientId', ri.ingredient_id,
+                  'ingredientName', i.name,
+                  'unit', i.unit,
+                  'quantity', ri.quantity,
+                  'stock', i.stock,
+                  'price', i.price
+                ) ORDER BY i.name ASC
+              ) FILTER (WHERE ri.id IS NOT NULL),
+              '[]'::json
+            ) AS items
+     FROM recipes r
+     LEFT JOIN recipe_items ri ON ri.recipe_id = r.id
+     LEFT JOIN ingredients i ON i.id = ri.ingredient_id
+     GROUP BY r.id
+     ORDER BY r.is_active DESC, r.created_at ASC`
+  );
+  return res.json({ success: true, data: { recipes: recipeRows } });
+}
+
+async function createRecipe(req, res) {
+  const name = text(req.body?.name, 'Nama resep', { max: 150 });
+  const yieldQty = integer(req.body?.yield, 'Hasil resep (yield)', { min: 1, max: 100000 });
+  const opex = decimal(req.body?.opex ?? 0, 'Biaya operasional (opex)');
+  assert(Array.isArray(req.body?.items) && req.body.items.length > 0, 400, 'Daftar bahan resep wajib diisi.');
+
+  const seen = new Set();
+  const items = req.body.items.map((item) => {
+    const ingredientId = text(item?.ingredientId, 'ID bahan', { max: 50 });
+    assert(!seen.has(ingredientId), 400, `Bahan ${ingredientId} dikirim lebih dari satu kali.`);
+    seen.add(ingredientId);
+    const quantity = decimal(item?.quantity, 'Takaran bahan');
+    assert(quantity > 0, 400, 'Takaran bahan harus lebih dari nol.');
+    return { ingredientId, quantity };
+  });
+
+  const recipe = await db.transaction(async (client) => {
+    const requestedIds = items.map((item) => item.ingredientId);
+    const { rows: matched } = await client.query(
+      'SELECT id FROM ingredients WHERE id = ANY($1::varchar[])',
+      [requestedIds]
+    );
+    assert(matched.length === requestedIds.length, 400, 'Sebagian bahan resep tidak ditemukan.');
+
+    const id = `rcp-${Date.now().toString(36)}-${Math.floor(100 + Math.random() * 900)}`;
+    const { rows: existingCount } = await client.query('SELECT COUNT(*)::int AS cnt FROM recipes');
+    const makeActive = Boolean(req.body?.isActive) || existingCount[0].cnt === 0;
+
+    if (makeActive) {
+      await client.query('UPDATE recipes SET is_active = FALSE');
+    }
+
+    const { rows: rRows } = await client.query(
+      `INSERT INTO recipes (id, name, yield, opex, is_active)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [id, name, yieldQty, opex, makeActive]
+    );
+
+    for (const item of items) {
+      await client.query(
+        `INSERT INTO recipe_items (recipe_id, ingredient_id, quantity)
+         VALUES ($1, $2, $3)`,
+        [id, item.ingredientId, item.quantity]
+      );
+    }
+
+    if (makeActive) {
+      await client.query('DELETE FROM bill_of_materials');
+      for (const item of items) {
+        await client.query(
+          'INSERT INTO bill_of_materials (ingredient_id, quantity, updated_at) VALUES ($1, $2, CURRENT_TIMESTAMP)',
+          [item.ingredientId, item.quantity]
+        );
+      }
+      await setSetting(client, req, 'production_yield', yieldQty);
+      await setSetting(client, req, 'production_opex', opex);
+    }
+
+    await audit(client, req, 'recipe.created', 'recipe', id, { name, yield: yieldQty, opex, items });
+    return { ...rRows[0], items };
+  });
+
+  return res.status(201).json({ success: true, data: { recipe } });
+}
+
+async function updateRecipeById(req, res) {
+  const recipeId = text(req.params.recipeId, 'ID resep', { max: 50 });
+  const name = text(req.body?.name, 'Nama resep', { max: 150 });
+  const yieldQty = integer(req.body?.yield, 'Hasil resep (yield)', { min: 1, max: 100000 });
+  const opex = decimal(req.body?.opex ?? 0, 'Biaya operasional (opex)');
+  assert(Array.isArray(req.body?.items) && req.body.items.length > 0, 400, 'Daftar bahan resep wajib diisi.');
+
+  const seen = new Set();
+  const items = req.body.items.map((item) => {
+    const ingredientId = text(item?.ingredientId, 'ID bahan', { max: 50 });
+    assert(!seen.has(ingredientId), 400, `Bahan ${ingredientId} dikirim lebih dari satu kali.`);
+    seen.add(ingredientId);
+    const quantity = decimal(item?.quantity, 'Takaran bahan');
+    assert(quantity > 0, 400, 'Takaran bahan harus lebih dari nol.');
+    return { ingredientId, quantity };
+  });
+
+  const recipe = await db.transaction(async (client) => {
+    const { rows: existing } = await client.query('SELECT * FROM recipes WHERE id = $1', [recipeId]);
+    assert(existing[0], 404, 'Resep tidak ditemukan.');
+
+    const requestedIds = items.map((item) => item.ingredientId);
+    const { rows: matched } = await client.query(
+      'SELECT id FROM ingredients WHERE id = ANY($1::varchar[])',
+      [requestedIds]
+    );
+    assert(matched.length === requestedIds.length, 400, 'Sebagian bahan resep tidak ditemukan.');
+
+    const { rows: rRows } = await client.query(
+      `UPDATE recipes SET name = $2, yield = $3, opex = $4, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 RETURNING *`,
+      [recipeId, name, yieldQty, opex]
+    );
+
+    await client.query('DELETE FROM recipe_items WHERE recipe_id = $1', [recipeId]);
+    for (const item of items) {
+      await client.query(
+        `INSERT INTO recipe_items (recipe_id, ingredient_id, quantity)
+         VALUES ($1, $2, $3)`,
+        [recipeId, item.ingredientId, item.quantity]
+      );
+    }
+
+    if (existing[0].is_active) {
+      await client.query('DELETE FROM bill_of_materials');
+      for (const item of items) {
+        await client.query(
+          'INSERT INTO bill_of_materials (ingredient_id, quantity, updated_at) VALUES ($1, $2, CURRENT_TIMESTAMP)',
+          [item.ingredientId, item.quantity]
+        );
+      }
+      await setSetting(client, req, 'production_yield', yieldQty);
+      await setSetting(client, req, 'production_opex', opex);
+    }
+
+    await audit(client, req, 'recipe.updated', 'recipe', recipeId, { name, yield: yieldQty, opex, items });
+    return { ...rRows[0], items };
+  });
+
+  return res.json({ success: true, data: { recipe } });
+}
+
+async function deleteRecipe(req, res) {
+  const recipeId = text(req.params.recipeId, 'ID resep', { max: 50 });
+  await db.transaction(async (client) => {
+    const { rows: existing } = await client.query('SELECT * FROM recipes WHERE id = $1', [recipeId]);
+    assert(existing[0], 404, 'Resep tidak ditemukan.');
+    assert(!existing[0].is_active, 400, 'Resep yang sedang aktif tidak dapat dihapus. Aktifkan resep lain terlebih dahulu.');
+
+    await client.query('DELETE FROM recipes WHERE id = $1', [recipeId]);
+    await audit(client, req, 'recipe.deleted', 'recipe', recipeId, { name: existing[0].name });
+  });
+  return res.json({ success: true, message: 'Resep berhasil dihapus.' });
+}
+
+async function activateRecipe(req, res) {
+  const recipeId = text(req.params.recipeId, 'ID resep', { max: 50 });
+  const recipe = await db.transaction(async (client) => {
+    const { rows: rRows } = await client.query('SELECT * FROM recipes WHERE id = $1', [recipeId]);
+    const r = rRows[0];
+    assert(r, 404, 'Resep tidak ditemukan.');
+
+    const { rows: items } = await client.query(
+      'SELECT ingredient_id, quantity FROM recipe_items WHERE recipe_id = $1',
+      [recipeId]
+    );
+    assert(items.length > 0, 400, 'Resep tidak memiliki bahan baku.');
+
+    await client.query('UPDATE recipes SET is_active = (id = $1)', [recipeId]);
+    await client.query('DELETE FROM bill_of_materials');
+    for (const item of items) {
+      await client.query(
+        'INSERT INTO bill_of_materials (ingredient_id, quantity, updated_at) VALUES ($1, $2, CURRENT_TIMESTAMP)',
+        [item.ingredient_id, item.quantity]
+      );
+    }
+    await setSetting(client, req, 'production_yield', r.yield);
+    await setSetting(client, req, 'production_opex', r.opex);
+
+    await audit(client, req, 'recipe.activated', 'recipe', recipeId, { name: r.name });
+    return { ...r, is_active: true, items };
+  });
+  return res.json({ success: true, data: { recipe } });
+}
+
 async function listBatches(req, res) {
-  const batches = await getAvailableBatches(db);
+  const batches = await getAllBatches(db);
   return res.json({
     success: true,
     data: {
@@ -186,17 +382,21 @@ async function createPurchaseOrder(req, res) {
   const quantity = decimal(req.body?.quantity, 'Jumlah pesanan');
   assert(quantity > 0, 400, 'Jumlah pesanan harus lebih dari nol.');
   const note = text(req.body?.note, 'Catatan', { max: 500, optional: true });
+  const customUnitPrice = (req.body?.unitPrice !== undefined && req.body?.unitPrice !== null && req.body?.unitPrice !== '')
+    ? decimal(req.body.unitPrice, 'Harga bahan')
+    : null;
 
   const purchaseOrder = await db.transaction(async (client) => {
     const { rows: ingRows } = await client.query('SELECT id, price FROM ingredients WHERE id = $1', [ingredientId]);
     assert(ingRows[0], 404, 'Bahan baku tidak ditemukan.');
 
+    const unitPrice = customUnitPrice !== null ? customUnitPrice : ingRows[0].price;
     const id = ID();
     const { rows } = await client.query(
       `INSERT INTO purchase_orders (id, ingredient_id, quantity, unit_price, note, created_by, status)
        VALUES ($1, $2, $3, $4, $5, $6, 'menunggu')
        RETURNING *`,
-      [id, ingredientId, quantity, ingRows[0].price, note, req.user.email]
+      [id, ingredientId, quantity, unitPrice, note, req.user.email]
     );
     await audit(client, req, 'purchase_order.created', 'purchase_order', id, { ingredientId, quantity });
     return rows[0];
@@ -274,13 +474,51 @@ async function createProduction(req, res) {
 
   const production = await db.transaction(async (client) => {
     const settings = await readSettings(client);
-    const { rows: bomRows } = await client.query(
-      `SELECT b.ingredient_id, b.quantity, i.stock, i.price, i.name
-       FROM bill_of_materials b
-       JOIN ingredients i ON i.id = b.ingredient_id
-       ORDER BY b.ingredient_id ASC
-       FOR UPDATE OF i`
-    );
+
+    let bomRows = [];
+    let customYield = null;
+    let customOpex = null;
+
+    if (Array.isArray(req.body?.recipeItems) && req.body.recipeItems.length > 0) {
+      const requestedIds = req.body.recipeItems.map((item) =>
+        text(item?.ingredientId, 'ID bahan resep', { max: 50 })
+      );
+      const { rows: ingRows } = await client.query(
+        'SELECT id, name, stock, price FROM ingredients WHERE id = ANY($1::varchar[]) FOR UPDATE',
+        [requestedIds]
+      );
+      const ingMap = Object.fromEntries(ingRows.map((r) => [r.id, r]));
+      assert(ingRows.length === requestedIds.length, 400, 'Sebagian bahan resep yang diproduksi tidak ditemukan.');
+
+      bomRows = req.body.recipeItems.map((item) => {
+        const id = item.ingredientId;
+        const q = decimal(item.quantity, `Takaran ${id}`);
+        assert(q > 0, 400, 'Takaran bahan harus lebih dari nol.');
+        return {
+          ingredient_id: id,
+          quantity: q,
+          stock: ingMap[id].stock,
+          price: ingMap[id].price,
+          name: ingMap[id].name,
+        };
+      });
+
+      if (req.body?.recipeYield !== undefined && req.body?.recipeYield !== null) {
+        customYield = integer(req.body.recipeYield, 'Hasil resep (yield)', { min: 1, max: 100000 });
+      }
+      if (req.body?.recipeOpex !== undefined && req.body?.recipeOpex !== null) {
+        customOpex = decimal(req.body.recipeOpex, 'Biaya operasional (opex)');
+      }
+    } else {
+      const { rows } = await client.query(
+        `SELECT b.ingredient_id, b.quantity, i.stock, i.price, i.name
+         FROM bill_of_materials b
+         JOIN ingredients i ON i.id = b.ingredient_id
+         ORDER BY b.ingredient_id ASC
+         FOR UPDATE OF i`
+      );
+      bomRows = rows;
+    }
     assert(bomRows.length > 0, 400, 'Resep BOM belum dikonfigurasi.');
 
     const bomMap = Object.fromEntries(bomRows.map((row) => [row.ingredient_id, row]));
@@ -330,8 +568,10 @@ async function createProduction(req, res) {
       await client.query('UPDATE ingredients SET stock = stock - $2 WHERE id = $1', [ingredientId, needed]);
     }
 
-    const yieldQty = Number(settings.production_yield) * recipeCount;
-    const totalOpex = Number(settings.production_opex) * recipeCount;
+    const yieldPerRecipe = customYield !== null ? customYield : Number(settings.production_yield);
+    const opexPerRecipe = customOpex !== null ? customOpex : Number(settings.production_opex);
+    const yieldQty = yieldPerRecipe * recipeCount;
+    const totalOpex = opexPerRecipe * recipeCount;
     const hppPerUnit = Number(((ingredientCost + totalOpex) / yieldQty).toFixed(4));
 
     const batchId = `BPK-${dateCode}-${String(sequence).padStart(2, '0')}`;
@@ -430,6 +670,11 @@ module.exports = {
   updateIngredient,
   getRecipe,
   updateRecipe,
+  listRecipes,
+  createRecipe,
+  updateRecipeById,
+  deleteRecipe,
+  activateRecipe,
   listBatches,
   listInventoryMovements,
   listPurchaseOrders,

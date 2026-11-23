@@ -1,7 +1,7 @@
 const { randomUUID } = require('crypto');
 const { assert } = require('../../utils/httpError');
 const { createAuditLog } = require('../../models/operations/auditModel');
-const { getAvailableBatches, availableCold } = require('../../models/operations/inventoryModel');
+const { getAvailableBatches, getAllBatches, availableCold } = require('../../models/operations/inventoryModel');
 const { getPartner, recordPartnerMovement } = require('../../models/operations/partnerModel');
 const { readSettings, setSetting } = require('../../models/operations/settingsModel');
 
@@ -49,6 +49,7 @@ module.exports = {
   audit,
   getPartner,
   getAvailableBatches,
+  getAllBatches,
   allocateBatches,
   availableCold,
   recordPartnerMovement,

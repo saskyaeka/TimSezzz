@@ -15,13 +15,73 @@ function posUnitPrice(basePrice, product) {
 
 async function getPosProducts(req, res) {
   const settings = await readSettings(db);
-  const products = Object.entries(POS_PRODUCTS).map(([id, product]) => ({
+  const standardProducts = Object.entries(POS_PRODUCTS).map(([id, product]) => ({
     id,
     name: product.name,
+    note: id === 'hangat' ? 'Satuan, dari kukusan toko' : id === 'pack6' ? 'Dari cold storage pusat' : 'Dari cold storage pusat',
     price: posUnitPrice(settings.central_price, product),
     coldUnits: product.coldUnits,
+    cold: product.coldUnits,
+    isStandard: true,
   }));
-  return res.json({ success: true, data: { products, availableColdStock: await availableCold(db) } });
+
+  try {
+    const { rows } = await db.query(
+      `SELECT id, name, note, price, cold_units AS "coldUnits"
+       FROM pos_menu_items ORDER BY created_at ASC`
+    );
+    const customProducts = (rows || []).map((r) => ({
+      ...r,
+      price: Number(r.price),
+      coldUnits: Number(r.coldUnits || 0),
+      cold: Number(r.coldUnits || 0),
+      isStandard: false,
+    }));
+    return res.json({
+      success: true,
+      data: {
+        products: [...standardProducts, ...customProducts],
+        availableColdStock: await availableCold(db),
+      },
+    });
+  } catch {
+    return res.json({
+      success: true,
+      data: { products: standardProducts, availableColdStock: await availableCold(db) },
+    });
+  }
+}
+
+async function createPosProduct(req, res) {
+  const name = text(req.body?.name, 'Nama menu', { min: 2, max: 100 });
+  const note = text(req.body?.note, 'Catatan menu', { max: 200, optional: true }) || '';
+  const price = decimal(req.body?.price, 'Harga jual');
+  assert(price > 0, 400, 'Harga menu harus lebih dari nol.');
+  const coldUnits = integer(req.body?.coldUnits ?? req.body?.cold ?? 0, 'Unit cold storage', { min: 0, max: 100 });
+  const id = `menu-${ID()}`;
+
+  try {
+    const { rows } = await db.query(
+      `INSERT INTO pos_menu_items (id, name, note, price, cold_units)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, name, note, price, cold_units AS "coldUnits"`,
+      [id, name, note, price, coldUnits]
+    );
+    const product = { ...rows[0], price: Number(rows[0].price), cold: Number(rows[0].coldUnits || 0), isStandard: false };
+    return res.status(201).json({ success: true, data: { product } });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message || 'Gagal menyimpan menu baru.' });
+  }
+}
+
+async function deletePosProduct(req, res) {
+  const productId = text(req.params.productId, 'ID menu', { max: 50 });
+  try {
+    await db.query(`DELETE FROM pos_menu_items WHERE id = $1`, [productId]);
+    return res.json({ success: true, message: 'Menu berhasil dihapus.' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message || 'Gagal menghapus menu.' });
+  }
 }
 
 async function getCurrentShift(req, res) {
@@ -127,9 +187,14 @@ async function checkout(req, res) {
     assert(shift, 409, 'Buka shift kasir sebelum mencatat transaksi.');
     const settings = await readSettings(client);
     const pricedItems = items.map((item) => {
-      const product = POS_PRODUCTS[item.productId];
-      const unitPrice = posUnitPrice(settings.central_price, product);
-      return { ...item, ...product, unitPrice, lineTotal: unitPrice * item.quantity };
+      const standard = POS_PRODUCTS[item.productId];
+      const unitPrice = standard
+        ? posUnitPrice(settings.central_price, standard)
+        : Math.round(Number(item.price ?? item.unitPrice ?? settings.central_price));
+      const coldUnits = standard ? standard.coldUnits : Number(item.coldUnits ?? item.cold ?? 0);
+      const unitMultiplier = standard ? standard.unitMultiplier : (Number(item.unitMultiplier) || 1);
+      const name = standard ? standard.name : (item.name || item.productId);
+      return { ...item, name, coldUnits, unitMultiplier, unitPrice, lineTotal: unitPrice * item.quantity };
     });
     const total = pricedItems.reduce((sum, item) => sum + item.lineTotal, 0);
     assert(total > 0, 400, 'Total transaksi harus lebih dari nol.');
@@ -172,7 +237,7 @@ async function checkout(req, res) {
 }
 
 async function reportSpoilage(req, res) {
-  const productId = enumValue(req.body?.productId, 'Produk', Object.keys(POS_PRODUCTS));
+  const productId = text(req.body?.productId, 'ID produk', { max: 50 });
   const quantity = integer(req.body?.quantity, 'Jumlah produk rusak', { min: 1, max: 10000 });
   const reason = text(req.body?.reason, 'Alasan', { max: 100 });
   const note = text(req.body?.note, 'Catatan', { max: 500, optional: true });
@@ -183,7 +248,9 @@ async function reportSpoilage(req, res) {
       [req.user.email]
     );
     assert(shifts[0], 409, 'Buka shift kasir sebelum mencatat produk rusak.');
-    const coldRequired = POS_PRODUCTS[productId].coldUnits * quantity;
+    const standard = POS_PRODUCTS[productId];
+    const coldUnitsPerItem = standard ? standard.coldUnits : Number(req.body?.coldUnits ?? req.body?.cold ?? 0);
+    const coldRequired = coldUnitsPerItem * quantity;
     if (coldRequired > 0) {
       const batches = await getAvailableBatches(client);
       let remaining = coldRequired;
@@ -210,6 +277,8 @@ async function reportSpoilage(req, res) {
 module.exports = {
   posUnitPrice,
   getPosProducts,
+  createPosProduct,
+  deletePosProduct,
   getCurrentShift,
   openShift,
   closeShift,

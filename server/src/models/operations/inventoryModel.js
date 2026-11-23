@@ -16,6 +16,20 @@ async function getAvailableBatches(client) {
   }));
 }
 
+async function getAllBatches(client) {
+  const { rows: batches } = await client.query(
+    `SELECT b.id, b.made_date, b.exp_date, b.qty, b.left_qty,
+            COALESCE(r.reserved_qty, 0)::int AS reserved_qty
+     FROM batches b
+     LEFT JOIN (
+       SELECT batch_id, SUM(quantity)::int AS reserved_qty
+       FROM manifest_batch_allocations WHERE status = 'pending' GROUP BY batch_id
+     ) r ON r.batch_id = b.id
+     ORDER BY b.exp_date ASC, b.made_date ASC, b.id ASC`
+  );
+  return batches;
+}
+
 async function availableCold(client) {
   const { rows } = await client.query(
     `SELECT COALESCE(SUM(b.left_qty - COALESCE(r.reserved_qty, 0)), 0)::int AS quantity
@@ -29,4 +43,4 @@ async function availableCold(client) {
   return rows[0].quantity;
 }
 
-module.exports = { getAvailableBatches, availableCold };
+module.exports = { getAvailableBatches, getAllBatches, availableCold };
