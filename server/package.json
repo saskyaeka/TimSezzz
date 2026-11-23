@@ -13,7 +13,9 @@
     "dev": "nodemon src/app.js",
     "create:owner": "node src/scripts/createOwner.js",
     "db:setup": "node src/scripts/setupDb.js",
-    "db:seed": "node src/scripts/seedDb.js"
+    "db:seed": "node src/scripts/seedDb.js",
+    "db:seed:recipes": "node src/scripts/seedRecipes.js",
+    "db:reset": "node src/scripts/resetDb.js"
   },
   "keywords": [],
   "author": "",

@@ -48,6 +48,24 @@ CREATE TABLE IF NOT EXISTS assets (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS recipes (
+  id VARCHAR(50) PRIMARY KEY,
+  name VARCHAR(150) NOT NULL,
+  yield INTEGER NOT NULL DEFAULT 60 CHECK (yield > 0),
+  opex NUMERIC(12, 2) NOT NULL DEFAULT 45000 CHECK (opex >= 0),
+  is_active BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS recipe_items (
+  id BIGSERIAL PRIMARY KEY,
+  recipe_id VARCHAR(50) NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+  ingredient_id VARCHAR(50) NOT NULL REFERENCES ingredients(id) ON DELETE RESTRICT,
+  quantity NUMERIC(12, 3) NOT NULL CHECK (quantity > 0),
+  UNIQUE (recipe_id, ingredient_id)
+);
+
 CREATE TABLE IF NOT EXISTS bill_of_materials (
   ingredient_id VARCHAR(50) PRIMARY KEY REFERENCES ingredients(id) ON DELETE RESTRICT,
   quantity NUMERIC(12, 3) NOT NULL CHECK (quantity >= 0),
@@ -125,25 +143,41 @@ CREATE TABLE IF NOT EXISTS pos_sales (
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS pos_menu_items (
+  id VARCHAR(50) PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  note TEXT,
+  price NUMERIC(14, 2) NOT NULL,
+  cold_units INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS pos_sale_items (
   id BIGSERIAL PRIMARY KEY,
   sale_id VARCHAR(50) NOT NULL REFERENCES pos_sales(id) ON DELETE CASCADE,
-  product_id VARCHAR(30) NOT NULL CHECK (product_id IN ('hangat', 'pack6', 'pack12')),
+  product_id VARCHAR(50) NOT NULL,
   quantity INTEGER NOT NULL CHECK (quantity > 0),
   unit_price NUMERIC(14, 2) NOT NULL CHECK (unit_price >= 0),
   unit_count INTEGER NOT NULL CHECK (unit_count > 0),
   line_total NUMERIC(14, 2) NOT NULL CHECK (line_total > 0)
 );
 
+-- Pastikan tabel pos_sale_items yang sudah ada tidak terkunci hanya pada 3 produk bawaan
+ALTER TABLE pos_sale_items ALTER COLUMN product_id TYPE VARCHAR(50);
+ALTER TABLE pos_sale_items DROP CONSTRAINT IF EXISTS pos_sale_items_product_id_check;
+
 CREATE TABLE IF NOT EXISTS pos_spoilage (
   id VARCHAR(50) PRIMARY KEY,
   cashier_email VARCHAR(100) NOT NULL REFERENCES users(email) ON DELETE RESTRICT,
-  product_id VARCHAR(30) NOT NULL CHECK (product_id IN ('hangat', 'pack6', 'pack12')),
+  product_id VARCHAR(50) NOT NULL,
   quantity INTEGER NOT NULL CHECK (quantity > 0),
   reason VARCHAR(100) NOT NULL,
   note TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE pos_spoilage ALTER COLUMN product_id TYPE VARCHAR(50);
+ALTER TABLE pos_spoilage DROP CONSTRAINT IF EXISTS pos_spoilage_product_id_check;
 
 CREATE TABLE IF NOT EXISTS partner_inventory_movements (
   id VARCHAR(50) PRIMARY KEY,

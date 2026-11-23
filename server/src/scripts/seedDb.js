@@ -30,8 +30,15 @@ async function seed() {
     }
     console.log('✓ Data partners berhasil di-seed.');
 
-    // 2. Seed Users untuk setiap Role
+    // 2. Seed Users untuk setiap Role (termasuk owner)
     const users = [
+      {
+        email: 'owner@paolotory.id',
+        name: 'Pemilik Usaha',
+        role: 'owner',
+        password: 'OwnerPaolotory123',
+        partner_id: null,
+      },
       {
         email: 'produksi@paolotory.id',
         name: 'Manajer Dapur',
@@ -76,7 +83,7 @@ async function seed() {
         [u.email, u.name, u.role, hash, u.partner_id]
       );
     }
-    console.log('✓ Akun pengguna (kitchen, pos, courier, partner) berhasil di-seed.');
+    console.log('✓ Akun pengguna (owner, kitchen, pos, courier, partner) berhasil di-seed.');
 
     // 3. Seed Bahan Baku (Ingredients)
     const ingredients = [
